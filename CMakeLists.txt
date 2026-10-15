@@ -1,10 +1,13 @@
 cmake_minimum_required(VERSION 3.24)
 project(RCTrainerSlice LANGUAGES CXX)
 
-add_executable(RCTrainer WIN32 src/main.cpp)
+add_executable(RCTrainer WIN32 src/main.cpp src/flight_math.h src/flight_dynamics.cpp src/flight_dynamics.h src/aircraft_model.cpp src/aircraft_model.h src/textured_aircraft_renderer.cpp src/textured_aircraft_renderer.h)
 target_compile_features(RCTrainer PRIVATE cxx_std_20)
 target_compile_definitions(RCTrainer PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN DIRECTINPUT_VERSION=0x0800)
-target_link_libraries(RCTrainer PRIVATE dinput8 dxguid winmm comctl32)
+target_link_libraries(RCTrainer PRIVATE dinput8 dxguid winmm comctl32 msimg32)
+add_custom_command(TARGET RCTrainer POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E copy_directory
+    "${CMAKE_SOURCE_DIR}/assets" "$<TARGET_FILE_DIR:RCTrainer>/assets")
 
 add_executable(PpmProbe tools/ppm_probe.cpp)
 target_compile_features(PpmProbe PRIVATE cxx_std_20)
@@ -15,4 +18,3 @@ if(MSVC)
   target_compile_options(RCTrainer PRIVATE /W4 /permissive- /EHsc /utf-8)
   target_compile_options(PpmProbe PRIVATE /W4 /permissive- /EHsc /utf-8)
 endif()
-
