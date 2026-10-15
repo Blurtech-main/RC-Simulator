@@ -43,7 +43,7 @@ The visual aircraft is the 29,700-triangle CC BY 4.0 “Plane (Cessna 172)” as
 | `Space` | reset aircraft on the runway |
 | `Esc` | exit |
 
-Keyboard fallback follows the transmitter sticks: hold `W/S` for throttle, `A/D` for rudder, left/right arrows for aileron, and hold the down arrow to pull the elevator back for nose-up rotation (up arrow pushes nose-down). Each mouse-wheel notch adds a 10% elevator pulse, holds it briefly, then springs it smoothly back to centre so a short scroll cannot leave the aircraft in a permanent stall. On takeoff, build at least 11.5 m/s and hold the down arrow to rotate. Keyboard flight input is accepted only while the trainer window has focus, and held directional controls clear when it loses focus.
+Keyboard fallback follows the transmitter sticks: hold `W/S` for throttle, `A/D` for rudder, left/right arrows for aileron, and briefly hold the down arrow to pull the elevator back for nose-up rotation (up arrow pushes nose-down). Each mouse-wheel notch adds a 10% elevator pulse, holds it briefly, then springs it smoothly back to centre so a short scroll cannot leave the aircraft in a permanent stall. On takeoff, build at least 11.5 m/s, briefly hold the down arrow to rotate, then release it as the aircraft climbs. Keyboard flight input is accepted only while the trainer window has focus, and held directional controls clear when it loses focus.
 
 ## Build
 

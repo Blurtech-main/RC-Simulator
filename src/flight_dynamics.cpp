@@ -64,7 +64,7 @@ void horizontalPanel(Accumulator& out,const AeroReferenceSurface&s,const FlightS
   float q=.5f*atm.density*speed*speed,area=s.span*s.chord;
   float ctrl=controlFor(s.role,s.centre.x,c);
   // A hinged control changes local camber; it is not an injected torque.
-  float hingeEffect=s.role==AeroSurfaceRole::Elevator?.85f:s.role==AeroSurfaceRole::Aileron?.70f:0.f;
+  float hingeEffect=s.role==AeroSurfaceRole::Elevator?.30f:s.role==AeroSurfaceRole::Aileron?.70f:0.f;
   float alpha=std::atan2(-vel.y,std::max(.05f,vel.z))+deg(s.incidenceDeg)+ctrl*deg(s.maxDeflectionDeg)*hingeEffect-inducedAlpha;
   float re=atm.density*speed*s.chord/std::max(1e-7f,atm.dynamicViscosity);
   bool tail=s.role==AeroSurfaceRole::HorizontalTail||s.role==AeroSurfaceRole::Elevator;
