@@ -1,0 +1,11 @@
+/build/
+/build-pitch/
+/work/
+/profiles/
+/replays/
+/controller-diagnostic.txt
+/self-test.txt
+/ppm-capture.raw
+/ppm-hits.log
+/tmp/
+/main.obj
