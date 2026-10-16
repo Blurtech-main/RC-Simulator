@@ -1,4 +1,4 @@
-param([switch]$RunTests)
+param([switch]$RunTests,[switch]$RunTestPilot)
 $ErrorActionPreference = 'Stop'
 $vs = & 'C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe' -latest -products * -property installationPath
 if (-not $vs) { throw 'Visual Studio Build Tools were not found.' }
@@ -9,7 +9,10 @@ if ($LASTEXITCODE) { exit $LASTEXITCODE }
 & $cmake --build build --config Release
 if ($LASTEXITCODE) { exit $LASTEXITCODE }
 if ($RunTests) {
-  & '.\build\Release\RCTrainer.exe' --self-test
-  exit $LASTEXITCODE
+  $testProcess = Start-Process -FilePath '.\build\Release\RCTrainer.exe' -ArgumentList '--self-test' -WindowStyle Hidden -Wait -PassThru
+  if ($testProcess.ExitCode) { exit $testProcess.ExitCode }
 }
-
+if ($RunTests -or $RunTestPilot) {
+  $pilotProcess = Start-Process -FilePath '.\build\Release\RCTrainer.exe' -ArgumentList '--test-pilot' -WindowStyle Hidden -Wait -PassThru
+  exit $pilotProcess.ExitCode
+}

@@ -18,25 +18,29 @@ TexturedAircraftRenderer::TexturedAircraftRenderer(){
   wchar_t exe[32768]{};GetModuleFileNameW(nullptr,exe,32768);auto path=std::filesystem::path(exe).parent_path()/L"assets"/L"aircraft"/L"cessna172"/L"cessna-172.rctmesh";
   std::ifstream f(path,std::ios::binary);if(!f){error_=L"missing assets/aircraft/cessna172/cessna-172.rctmesh";return;}
   char magic[8]{};f.read(magic,8);uint32_t version{},triangles{},materials{};float sourceScale{},span{},length{};
-  if(std::string(magic,8)!="RCTMESH1"||!read(f,version)||!read(f,triangles)||!read(f,materials)||!read(f,sourceScale)||!read(f,span)||!read(f,length)||version!=2){error_=L"invalid Cessna runtime mesh";return;}
+  if(std::string(magic,8)!="RCTMESH1"||!read(f,version)||!read(f,triangles)||!read(f,materials)||!read(f,sourceScale)||!read(f,span)||!read(f,length)||(version!=2&&version!=3)){error_=L"invalid Cessna runtime mesh";return;}
   if(triangles>1000000||materials>128){error_=L"unsafe Cessna runtime mesh counts";return;}
   textures_.resize(materials);
   for(auto&t:textures_){uint32_t bytes{};if(!read(f,t.flags)||!read(f,t.width)||!read(f,t.height)||!read(f,bytes)||!t.width||!t.height||bytes!=t.width*t.height*4u){error_=L"invalid Cessna texture";return;}t.rgba.resize(bytes);f.read(reinterpret_cast<char*>(t.rgba.data()),bytes);if(!f){error_=L"truncated Cessna texture";return;}}
-  triangles_.resize(triangles);for(auto&t:triangles_){for(auto&v:t.v)f.read(reinterpret_cast<char*>(&v),sizeof(v));read(f,t.material);if(!f||t.material>=materials){error_=L"truncated Cessna geometry";triangles_.clear();return;}}
+  triangles_.resize(triangles);float propMinX=INFINITY,propMaxX=-INFINITY,propMinY=INFINITY,propMaxY=-INFINITY;for(auto&t:triangles_){for(auto&v:t.v){f.read(reinterpret_cast<char*>(&v),sizeof(v));}read(f,t.material);if(version>=3)read(f,t.part);if(!f||t.material>=materials||t.part>32){error_=L"truncated Cessna geometry";triangles_.clear();return;}if(t.part==1)for(const auto&v:t.v){propMinX=std::min(propMinX,v.x);propMaxX=std::max(propMaxX,v.x);propMinY=std::min(propMinY,v.y);propMaxY=std::max(propMaxY,v.y);}}
+  if(std::isfinite(propMinX)&&std::isfinite(propMinY)){propellerHubX_=(propMinX+propMaxX)*.5f;propellerHubY_=(propMinY+propMaxY)*.5f;}
   pixels_.resize(480*340*4);depth_.resize(480*340);loaded_=true;
 }
 
-void TexturedAircraftRenderer::draw(HDC target,int cx,int cy,float ppm,float qw,float qx,float qy,float qz){
+void TexturedAircraftRenderer::draw(HDC target,int cx,int cy,float ppm,float qw,float qx,float qy,float qz,float propellerAngle,float propellerRpm){
   if(!loaded_)return;constexpr int W=480,H=340;std::fill(pixels_.begin(),pixels_.end(),static_cast<unsigned char>(0));std::fill(depth_.begin(),depth_.end(),-1e30f);
   struct S{float x,y,z,nx,ny,nz,u,v;};
   for(int pass=0;pass<2;pass++)for(const auto&t:triangles_){const auto&tex=textures_[t.material];bool transparent=(tex.flags&1)!=0;if(transparent!=(pass==1))continue;S s[3]{};for(int i=0;i<3;i++){
     // The imported C172 mesh points down local -Z, while the flight model's
     // forward vector is local +Z.  Turn only the visual mesh around so a
     // fresh flight starts looking down the runway instead of back at camera.
-    auto p=rotate(qw,qx,qy,qz,{-t.v[i].x,t.v[i].y,-t.v[i].z});
-    auto n=rotate(qw,qx,qy,qz,{-t.v[i].nx,t.v[i].ny,-t.v[i].nz});
+    P3 local{t.v[i].x,t.v[i].y,t.v[i].z},localNormal{t.v[i].nx,t.v[i].ny,t.v[i].nz};
+    if(t.part==1){float angle=propellerAngle;float ca=std::cos(angle),sa=std::sin(angle);float x=local.x-propellerHubX_,y=local.y-propellerHubY_;local={propellerHubX_+ca*x-sa*y,propellerHubY_+sa*x+ca*y,local.z};localNormal={ca*localNormal.x-sa*localNormal.y,sa*localNormal.x+ca*localNormal.y,localNormal.z};}
+    auto p=rotate(qw,qx,qy,qz,{-local.x,local.y,-local.z});
+    auto n=rotate(qw,qx,qy,qz,{-localNormal.x,localNormal.y,-localNormal.z});
     float k=1.f/(1.f+std::max(-.75f,p.z)*.12f);s[i]={W*.5f+p.x*ppm*k,H*.5f-(p.y-.16f*p.z)*ppm*k,p.z,n.x,n.y,n.z,t.v[i].u,t.v[i].v};
   }
+  (void)propellerRpm; // Reserved for a calibrated shutter/motion-blur pass.
     float area=edge(s[0].x,s[0].y,s[1].x,s[1].y,s[2].x,s[2].y);if(std::abs(area)<.01f)continue;
     int x0=std::clamp(int(std::floor(std::min({s[0].x,s[1].x,s[2].x}))),0,W-1),x1=std::clamp(int(std::ceil(std::max({s[0].x,s[1].x,s[2].x}))),0,W-1);
     int y0=std::clamp(int(std::floor(std::min({s[0].y,s[1].y,s[2].y}))),0,H-1),y1=std::clamp(int(std::ceil(std::max({s[0].y,s[1].y,s[2].y}))),0,H-1);

@@ -16,12 +16,17 @@ A clean-room, Windows-native RC flight trainer. The first slice deliberately sta
 - a 3.65 kg, 1:6.395 high-wing electric C172 replica and one simple grass field
 - a texture-mapped Cessna 172 asset at exact 1:6.395 scale (1.72 m wingspan), with landing gear and component collision hulls
 - fixed-step telemetry plus deterministic CSV record/replay
+- embedded Airbus/PolarSys B612 Mono cockpit readout (including bold heading face), with no system-font installation required
 
 The second slice replaces the prototype force approximation with local-surface, low-Reynolds-number aerodynamics and a six-degree-of-freedom rigid body. Wing stall and drag rise are anchored to measured NACA 2412 data; finite-wing correction, induced drag, tail downwash, surface-local rotational flow, control-surface incidence, propeller advance ratio, measured APC 14x7 coefficients, prop torque and the inertia tensor all participate in the result. The HUD exposes AoA, sideslip, Reynolds number, propeller RPM and stall fraction. See [AERODYNAMICS.md](AERODYNAMICS.md) for equations, research sources, validation gates and the explicit future live-weather boundary.
 
-The flight-school loop remains restartable: takeoff, climb, cruise, power-off glide, and a controlled landing. The HUD presents the current objective, elapsed time, and score; a crash returns the aircraft and lesson to the start after two seconds without disturbing input calibration or replay data. The ground is intentionally a single stretched field polygon that reaches the horizon. One runway wedge changes apparent width with altitude, while sixteen broad moving distance bands and two boundary lines provide cheap scale and movement cues—no grass blades or dense grid. Trainer-port PPM input receives light center dead-zone filtering and smoothing.
+Propulsion is an aircraft-installed component rather than a Cessna-specific force. The current electric unit couples motor back EMF, ESC/current limits, battery sag, shaft inertia and measured propeller load; it supplies force, reaction/gyroscopic moment, propwash, telemetry and visual shaft phase. New aircraft should provide mass/inertia, aero panels, collision proxies and a list of propulsion definitions. F4 switches between default `REALISTIC` reaction torque and the explicitly labelled trainer assist.
 
-The flight recorder stores the complete interval from **Record Flight** to **Stop** in `replays/latest.csv`. Launch always begins as a fresh live flight; press **F6** to load and loop a saved flight. **Manual Override** immediately ends playback and hands the aircraft back to the live controller; **Clear** stops playback and removes the saved flight.
+The flight-school loop remains restartable: takeoff, climb, cruise, power-off glide, and a controlled landing. The HUD presents the current objective, elapsed time, and score; a crash returns the aircraft and lesson to the start after two seconds without disturbing input calibration or replay data. The ground is a world-locked, perspective-correct textured plane with fine and large-scale grass layers, distance mip filtering and a mown grass runway embedded in the same projection. The macro layer preserves broad field variation when the fine texture averages at altitude. Ground is shaded at half resolution and filtered once into the frame, avoiding grass geometry, a dense grid and screen-space texture tiles. Cached baked sky, rolling-hill and photographic treeline PNG layers move panoramically with heading; the transparent irregular lower feather blends the distant landscape into the ground rather than restoring a straight horizon seam. No synthetic ground-fog colour is applied. Trainer-port PPM input receives light center dead-zone filtering and smoothing.
+
+Ground motion now comes from three individual wheel contacts with suspension, tyre grip, rolling resistance, rudder-linked nose-wheel steering and explicit braking. Ground effect varies continuously with wing height/span. The complete test-card, expertise and competitive-validation programme is in [FLIGHT_TEST_PLAN.md](FLIGHT_TEST_PLAN.md).
+
+The flight recorder stores the complete interval from **Record Flight** to **Stop** in `replays/latest.csv`. Stopping a recording also creates `reports/transmitter-latest.html`: a self-contained virtual test-pilot report with the received controls, X/Y/Z position, pitch/bank/heading, vertical speed, airspeed, angle of attack, stall state, and control-sign screening. Launch always begins as a fresh live flight; press **F6** to load and loop a saved flight. **Manual Override** immediately ends playback and hands the aircraft back to the live controller; **Clear** stops playback and removes the saved flight.
 
 The visual aircraft is the 29,700-triangle CC BY 4.0 “Plane (Cessna 172)” asset by osmosikum, rendered with its texture maps by the built-in depth-tested software renderer. The original GLB and full attribution are packaged under `assets/aircraft/cessna172`. Collision primitives and named aerodynamic panels remain separate data in `src/aircraft_model.*`; `src/flight_dynamics.*` evaluates those panels.
 
@@ -32,6 +37,8 @@ The visual aircraft is the 29,700-triangle CC BY 4.0 “Plane (Cessna 172)” as
 | `F1` | show/hide help |
 | `F2` | cycle through Windows audio inputs for trainer-port PPM |
 | `F3` | restart the flight-school lesson and aircraft |
+| `F4` | switch between realistic propulsion reaction and trainer assistance |
+| `B` | hold wheel brakes |
 | `C` | start calibration; move every used stick through its full travel, then press `Enter` |
 | `1`–`4` | select a function: aileron, elevator, throttle, rudder |
 | `[` / `]` | assign the previous/next physical axis to the selected function |
@@ -48,3 +55,9 @@ Keyboard fallback follows the transmitter sticks: hold `W/S` for throttle, `A/D`
 ## Build
 
 Run `build.ps1`. The executable is written to `build/Release/RCTrainer.exe`.
+
+Run `build.ps1 -RunTests` for the conventional regression suite plus the deterministic flight-envelope oracle. It writes `reports/virtual-test-pilot.html`, full telemetry in `virtual-test-pilot.csv`, and one concise row per expected corridor in `virtual-test-pilot-oracle.csv`. To run only the flight-envelope card after compiling, use `build.ps1 -RunTestPilot`.
+
+## Cockpit readout typeface
+
+The in-app flight readout uses **B612 Mono**, a typeface designed and tested for aircraft cockpit screens. Its regular and bold faces are compiled directly into `RCTrainer.exe`; the application loads them privately at runtime, so the visual design is retained on every user's PC. The source fonts and their SIL Open Font License 1.1 are redistributed in `assets/fonts/` beside the executable.

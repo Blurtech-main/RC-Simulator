@@ -6,6 +6,11 @@ Build instructions, controls, and the concise project overview are preserved in 
 
 > **Repository boundary:** these notes describe `Blurtech-main/RC-Simulator` only. They do not describe Semantic Resonance Engine, Sigil, PhoenixRC, SimEmu, or any other project.
 
+<details>
+<summary><strong>Initial development (unversioned)</strong></summary>
+
+Everything in this section predates formal versioning. Its historical labels describe development state and evidence only; they are not release version numbers.
+
 ## Status key
 
 | Label | Meaning |
@@ -35,6 +40,7 @@ The smaller steps below are reconstructed from the surviving source, diffs, diag
 13. **Trainer elevator-authority correction** — reduced the elevator's exaggerated hinge effectiveness after measuring roughly 1 N·m of pitching-moment change at only 25% stick. The live-input takeoff regression now uses a finite keyboard-style rotation pulse with neutral aileron rather than hidden roll correction or indefinitely held elevator, covering the reported throttle-plus-pitch sequence without forcing a stall.
 14. **Live-style takeoff regression patch** — added a second automated takeoff using the same gradual throttle ramp and post-11.5 m/s elevator rotation expected from keyboard operation, and made it a mandatory aerodynamic-suite gate. The current recorded self-test includes and passes this path.
 15. **Controls-on-demand overlay patch** — changed the aerodynamic controls/help overlay from visible-by-default to hidden on launch. It now appears only when the pilot presses F1, leaving the runway view clear at startup.
+16. **Virtual RC test-pilot and camera-truth patch** — added deterministic and real-transmitter HTML/CSV flight reports covering received controls, X/Y/Z motion, pitch/bank/heading, vertical speed, airspeed, angle of attack, stall and signed control response. Removed the pitch-coupled aircraft screen offset that made nose-up look like downward travel and nose-down look like upward travel in the chase view.
 
 ---
 
@@ -146,11 +152,12 @@ Status: **implemented on `main`; not yet packaged as a release**
 ### Field, runway, and performance rendering
 
 - Removed the previous dense perspective grid and the approximately 90,000 candidate grass-blade segments evaluated during a frame.
-- Replaced them with one solid field polygon extending cleanly to the horizon.
-- Added a single runway wedge whose apparent width and lateral offset respond to altitude and aircraft displacement.
-- Added sixteen broad, moving cross-field distance bands to communicate forward travel and height at very low draw cost.
-- Added two converging field boundaries to make lateral drift visible without recreating a dense grid.
-- Removed the finite-looking 120 m grid cutoff and far-field grass fade.
+- Replaced the screen-space field with a world-locked perspective plane sampled from a compact grass bitmap.
+- Built a mip pyramid at load time, selected it from the projected pixel footprint and bilinearly sampled it to prevent distant shimmer and chunky near-field texels.
+- Integrated the mown grass runway and boundary strips in world coordinates so they turn, translate and converge with the terrain rather than behaving like a screen-space wedge.
+- Rendered stochastic ground at half resolution and performed one filtered GDI upscale, retaining full-resolution aircraft and HUD rendering.
+- Kept the field effectively unbounded through wrapped world coordinates; distance mip filtering supplies antialiasing without a synthetic grass-fog colour.
+- Added a second 170 m grass-variation scale so distant terrain retains broad natural colour/detail instead of collapsing into a flat average-green band.
 - Based the horizon on the aircraft’s actual forward vector rather than raw quaternion component signs, avoiding visual flips from equivalent quaternion sign changes.
 - Based all ground-plane projections on aircraft altitude.
 - Limited the camera pitch cue so steep pitch does not push the entire field off-screen and make ground contact look like an unexplained mid-air crash.
@@ -218,6 +225,9 @@ Status: **implemented on `main`; not yet packaged as a release**
 - Added aircraft-model contract checks for upright and inverted bounds, seven collision proxies, and eight aerodynamic panels.
 - Added a second takeoff path that mirrors live keyboard operation: gradual throttle ramp, modest roll correction, and elevator rotation after 11.5 m/s.
 - Made that live-input-path takeoff a required part of the overall aerodynamic suite rather than reporting it as optional telemetry.
+- Added a longer takeoff/pull/push card through `--test-pilot`, with explicit finite-state, crash, climb, lateral-stability and signed pitch-rate gates.
+- Added a self-contained inline-SVG report and full-resolution CSV, requiring no plotting package, network service, or browser runtime inside the simulator.
+- Made `build.ps1 -RunTests` run both the conventional suite and the virtual test-pilot card; `-RunTestPilot` runs the latter independently.
 
 ### Recorded validation snapshot
 
@@ -225,7 +235,7 @@ The current `self-test.txt` records **PASS** with:
 
 | Check | Recorded result |
 |---|---:|
-| Deterministic fixed-step hash | `cf3cdfd5012b741a` |
+| Deterministic fixed-step hash | `b22c21c8944b4c01` |
 | Simulated deterministic frames | 2,400 |
 | Finite and repeatable state | Pass |
 | Parked stability | Pass |
@@ -248,6 +258,8 @@ The current `self-test.txt` records **PASS** with:
 | Replay loop | Pass |
 | Aircraft model contract | Pass |
 | Collision proxies / aero surfaces | 7 / 8 |
+| Virtual test-pilot takeoff/climb | Pass |
+| Virtual test-pilot pull/push response | Pass / Pass |
 
 The current `controller-diagnostic.txt` additionally records successful Windows audio capture and textured-aircraft loading. No DirectInput device was present for that diagnostic run, so it records keyboard fallback rather than proving transmitter acceptance.
 
@@ -257,6 +269,7 @@ The current `controller-diagnostic.txt` additionally records successful Windows 
 - The current diagnostic proves that the audio capture device opened; it does not by itself prove a complete live DX6i flight.
 - No current evidence establishes visual acceptance across all window sizes, monitors, or display-scaling settings.
 - The current recorded self-test includes the live-input-path takeoff gate (`live_takeoff=1`); it is a simulated keyboard-style input path, not evidence of human controller acceptance.
+- A transmitter report analyses the exact controls received by the simulator, but a clean one-control-at-a-time recording is still required before treating its correlation warning as a channel-reversal diagnosis.
 - This is a research-backed engineering model, not certified Cessna flight-test equivalence.
 - Exact RC mass distribution, hinge geometry, motor/ESC constants, thrust-stand curves, and full-airframe wind-tunnel data remain replaceable calibration inputs because measurements for this specific virtual airframe are not available.
 - Rain and turbulence exist as solver inputs but deliberately have no claimed aerodynamic effect yet.
@@ -266,7 +279,7 @@ The current `controller-diagnostic.txt` additionally records successful Windows 
 
 ---
 
-## 0.1.0 — Released trainer foundation
+## Released trainer foundation (pre-versioning)
 
 Date: **15 October 2026**
 Commit: [`3b3d4e8` — Initial RC Simulator project](https://github.com/Blurtech-main/RC-Simulator/commit/3b3d4e8d6b00663fa0bdc863b389058c0901d649)
@@ -419,18 +432,27 @@ This ledger is intentionally redundant: it makes small patches discoverable even
 | `src/main.cpp` | Win32 shell, DirectInput, calibration, WaveIn PPM, lessons, replay, input-focus fix, fresh-launch replay fix, collision integration, low-cost field, telemetry, and expanded self-tests. |
 | `src/flight_math.h` | Shared vector and quaternion mathematics extracted from the original application. |
 | `src/flight_dynamics.*` | NACA 2412 data, finite-wing correction, panel forces, post-stall continuation, tail/fin/control response, propeller coefficients, atmosphere-relative flow, rigid-body integration, and telemetry. |
+| `src/flight_test_report.*` | Dependency-free virtual test-pilot CSV/HTML generation, X/Y/Z and attitude plots, control-response screening, and deterministic test-card verdicts. |
+| `src/ground_dynamics.*` | Per-wheel suspension, rolling/braking resistance, lateral tyre grip, nose-wheel steering, force-at-contact moments, and contact telemetry. |
+| `src/ground_renderer.*` | Perspective-correct world ground, fine and macro bitmap scales, mip-filtered bilinear sampling, mown runway integration, and half-resolution shading without synthetic distance fog. |
+| `src/environment_renderer.*` | Cached baked sky and alpha-premultiplied hills/treeline layers, panoramic heading movement, and transparent ground overlap. |
 | `src/aircraft_model.*` | Scale-correct dimensions, seven collision proxies, eight aerodynamic surfaces, landing gear, and orientation-aware ground bounds. |
 | `src/textured_aircraft_renderer.*` | Validated runtime asset loading, two-pass depth-tested rasterisation, bilinear texture sampling, lighting, canopy correction, and alpha compositing. |
 | `tools/ppm_probe.cpp` | Standalone Windows audio capture and evidence tool for locating likely PPM signal thresholds and frame intervals. |
 | `tools/convert_glb_aircraft.py` | Reproducible GLB conversion, axis/dimension normalisation, transform baking, full-resolution material embedding, and runtime-mesh output. |
-| `assets/grass-tile.png` | Original tracked grass asset; the active ground renderer is procedural. |
+| `assets/grass-field-cheap.bmp` | Compact runtime grass surface loaded from the executable's packaged asset directory. |
+| `assets/grass-tile.png` | Original high-resolution source grass asset retained for future asset regeneration. |
+| `assets/environment/sky-rural-v1.png` | Baked rural daylight sky panorama with asymmetric photographic clouds. |
+| `assets/environment/hills-treeline-v2.png` | Baked rolling hills, hedgerows and tree clusters with real transparency above and a feathered irregular lower edge. |
 | `assets/aircraft/cessna172` | Original attributed GLB, compact runtime derivative, six embedded material maps, and complete licence/modification record. |
 | `profiles/default.ini` | Persistent controller endpoints, centres, dead zones, function mapping, and reversal defaults; runtime-generated and intentionally ignored. |
 | `replays/latest.csv` | Deterministic flight record; runtime-generated and intentionally ignored. |
+| `reports/*.html`, `reports/*.csv` | Scripted or real-transmitter virtual test-pilot evidence; runtime-generated and intentionally ignored. |
 | `CMakeLists.txt` | RCTrainer and PpmProbe targets, strict compile options, required Windows libraries, new module integration, and post-build asset packaging. |
-| `build.ps1` | Visual Studio discovery, CMake configure/build, Release output, and optional self-test execution. |
+| `build.ps1` | Visual Studio discovery, CMake configure/build, Release output, conventional self-tests, and virtual test-pilot execution. |
 | `build-direct.cmd` | Original single-source MSVC fallback; retained for history but not authoritative for the current multi-file renderer build. |
 | `AERODYNAMICS.md` | Equations, research sources, validation gates, live-weather boundary, and calibration limitations for the current solver. |
+| `FLIGHT_TEST_PLAN.md` | Expert-development curriculum, test-card format, envelope gates, competitive benchmarks, instrumentation and human-pilot acceptance boundary. |
 | `self-test.txt` | Latest automated deterministic, takeoff, aerodynamic, wind, replay, and aircraft-contract result; runtime-generated and intentionally ignored. |
 | `controller-diagnostic.txt` | Latest local device, capture, renderer, asset, collision, and aerodynamic-surface startup snapshot; runtime-generated and intentionally ignored. |
 | `ppm-hits.log` | Timestamped PPM candidate evidence used for signal diagnosis; runtime-generated and intentionally ignored. |
@@ -444,6 +466,7 @@ This ledger is intentionally redundant: it makes small patches discoverable even
 | Source implementation | Present on `main` for the aerodynamic/C172 update. |
 | Repository history | Foundation commit `3b3d4e8` and the aerodynamic/C172 update are recorded on `main`. |
 | Automated simulation | Latest recorded self-test is PASS. |
+| Automated takeoff/pitch report | Latest deterministic virtual test-pilot card is PASS. |
 | Asset loading | Latest recorded diagnostic says `TEXTURED_ASSET=LOADED`. |
 | Windows audio capture | Latest recorded diagnostic says `AUDIO_PPM_CAPTURE=OPEN`. |
 | DirectInput hardware | Not established by the latest diagnostic; it records `DIRECTINPUT=NONE`. |
@@ -453,3 +476,181 @@ This ledger is intentionally redundant: it makes small patches discoverable even
 | Release/package acceptance | Not yet recorded for the aerodynamic/C172 update. |
 
 That separation is deliberate: passing code and telemetry checks are evidence of implementation, not a claim that a human has accepted the aircraft’s handling, visuals, controller chain, or packaged release.
+
+## 2026-10-16: throttle-only turning correction
+
+Corrected the fin side-force sign so sideways flow produces restoring yaw and yaw-rate damping. Rudder steering direction is preserved. Added centred-aileron propeller torque trim, fading with aileron input, to prevent steady bank and continuous turning; ground compensation uses the same residual torque. This is deliberate trainer assistance.
+
+Regression tests cover both signs of sideslip and yaw rate, plus 60 simulated seconds each of keyboard throttle ramp and immediate full throttle with centred controls. Original solver: FAIL, maximum heading departure 127.759 degrees. Corrected solver: PASS, zero heading departure. Existing tests pass. Live controller acceptance remains unverified.
+
+## 2026-10-16: reusable coupled propulsion system
+
+Replaced the artificial throttle-to-target-RPM spool with a reusable electric propulsion component. Each aircraft definition can now install one or more independently configured motor, ESC, battery and fixed-pitch propeller units with arbitrary body mount, shaft axis and rotation direction. The current Cessna uses merged measured UIUC APC 14x7 runs through advance ratio 0.6098 plus the complete measured static RPM sweep.
+
+Motor back EMF, winding resistance, ESC current limiting, battery sag, drivetrain efficiency, propeller load and combined shaft inertia now determine RPM. The airframe receives actual mount-offset force, motor reaction and gyroscopic moments. Propwash reaches aerodynamic panels through a low-order momentum-theory wake. Shaft phase drives the separately tagged propeller mesh and is recorded in replay data.
+
+The simulator starts in `REALISTIC` mode with full propulsion reaction. F4 explicitly enables the old centred-aileron trainer compensation. The HUD now reports volts, amps, shaft watts and advance ratio, and warns when operation leaves the measured propeller envelope.
+
+The self-test now gates measured-map interpolation, definition validation, density scaling, forward-speed unloading, reaction sign, counter-rotating twin cancellation, current-limited shaft convergence, phase integration and slipstream sampling. The build script now waits for the Windows GUI self-test process and enforces its real exit code. Build and automated tests pass; physical thrust-stand, battery-discharge, motor-manufacturer and expert RC pilot validation remain open acceptance layers.
+
+## 2026-10-16: individual landing gear and flight-test discipline
+
+Replaced the global ground velocity/angular damping shortcut with three force-producing wheel contacts. Each aircraft-defined gear leg now has wheel position/radius, spring rate, damping, rolling resistance, lateral grip, braking grip and steering range. Contact velocity includes rigid-body rotation, tyre forces are friction-bounded, the nose wheel follows rudder, and `B` commands wheel braking. Gear support is separated from conservative airframe collision proxies; a bounded suspension stop prevents runway tunnelling while deep airframe contact, invalid attitude and excessive touchdown speed remain crash conditions.
+
+Added a wing-height/span ground-effect approximation that continuously reduces induced flow and induced drag near the runway. The HUD exposes wheel-contact count, brake state and ground-effect percentage.
+
+The expanded deterministic suite passes individual force-direction and steering-sign checks, airborne isolation, braking, soft-touchdown settling and bounded ground effect while retaining the earlier takeoff, yaw, stall, wind, propulsion and replay gates. The recorded brake scenario travels 4.28 m versus 20.37 m while coasting from the same initial state; this is a regression result, not measured tyre validation.
+
+Added [FLIGHT_TEST_PLAN.md](FLIGHT_TEST_PLAN.md), which turns authoritative flight-theory and flight-test references into project test cards, instrumentation requirements, an envelope-expansion order, competitive simulator comparisons and a future multi-pilot handling gate. Until experienced RC pilots participate, the project will describe the result as research-backed and systematically tested—not pilot-proven or fully real.
+
+## 2026-10-16: virtual RC test pilot and truthful chase-camera motion
+
+Added a built-in `--test-pilot` card that performs a gradual-throttle takeoff, finite rotation, deliberate pull, and deliberate push at the same fixed 120 Hz step used by the simulator. It writes a portable `reports/virtual-test-pilot.html` plus complete CSV telemetry. The report overlays the controls actually received with X/Y/Z position, vertical speed, pitch, bank, heading, body rates, airspeed, angle of attack and stall percentage, then issues finite-state, crash, climb, lateral-stability and signed elevator-response verdicts. A correct push is judged first by reduction of nose-up angular rate, because real rotational inertia can let geometric pitch continue rising briefly.
+
+Stopping an ordinary F5 transmitter recording now produces `reports/transmitter-latest.html` and `.csv` through the same analysis path. The control-sign correlation is deliberately a screening tool: a pilot should move one control at a time at flying speed before treating a warning as proof of a reversed channel.
+
+Corrected the chase-camera presentation independently of the physics. The old aircraft screen centre was attached to the pitch-shifted horizon, so nose-up moved the entire aircraft downward and nose-down moved it upward by an amount comparable to several metres of apparent altitude. The aircraft now remains on a stable chase-camera anchor; world-locked ground perspective and the AGL telemetry show real altitude change. The latest conventional suite and the new scripted report both pass. This does not yet constitute a real-transmitter handling acceptance run.
+
+Replaced the open-loop pull/push sequence after it was shown to pass a nose-down command while the aircraft was still pitched roughly 41 degrees up. The virtual pilot now flies a closed-loop 30-second takeoff/climb trajectory and runs isolated matched-state elevator, aileron and rudder pairs. It also checks nose attitude, angle of attack and world-vertical aerodynamic force directly. The concise oracle CSV records expected corridors, observations and likely fault areas; the detailed HTML retains the complete plots.
+
+Stabilized the chase camera against short-period aircraft yaw. Camera heading now follows the horizontal flight path through a damped 22-degree-per-second limiter, and the aircraft is rendered relative to that camera yaw. This removes the false impression that the whole ground swings left and right while preserving actual heading and cross-track motion in telemetry.
+
+</details>
+
+---
+
+## Version 0.1.0 — Realistic ground, propulsion, environment, and flight-test release
+
+Release date: **16 October 2026**
+Status: **first formally versioned program state; accepted by the project owner**
+
+Version 0.1.0 establishes the current simulator as the first numbered checkpoint. It gathers every implementation change made since the previous patch-notes request into one release: physically coupled electric propulsion, individual landing gear and ground effect, a world-locked textured airfield, composited rural scenery, a steadier chase camera, deterministic virtual test-pilot reporting, corrected controller mapping and yaw behaviour, expanded diagnostics, and a hardened Windows build/test path.
+
+### Flight dynamics and trainer behaviour
+
+- Corrected the vertical-fin side-force sign so sideslip produces a restoring force and aft-fin yaw-rate damping instead of reinforcing a turn.
+- Preserved conventional rudder steering after the fin correction; positive and negative rudder inputs still generate their expected opposite yaw responses.
+- Added explicit regressions for both sideslip signs and both yaw-rate signs rather than validating only one direction.
+- Added two 60-second throttle-only trials with centred flight controls: one using a keyboard-style throttle ramp and one beginning at full throttle.
+- Added optional centred-aileron trainer compensation for residual propulsion roll torque. The compensation fades away as the pilot commands aileron, so it cannot conceal deliberate roll input.
+- Changed startup to the unassisted `REALISTIC` path. The complete motor/propeller reaction is therefore active by default; F4 explicitly toggles trainer assistance.
+- Moved mass, inertia and aerodynamic constants into the aircraft definition so the solver is no longer tied to hidden Cessna-specific literals.
+- Added configuration-owned reference chord, aspect ratio, span efficiency, wing incidence, dihedral, wing area, roll stability, tail lift slope/stall angle and fuselage drag area.
+- Retained the fixed 120 Hz six-degree-of-freedom integration, panel-local airflow, atmosphere-relative velocity, NACA 2412 interpolation, post-stall continuation and rigid-body gyroscopic term.
+- Added a wing-height/span ground-effect approximation that continuously reduces induced flow and induced drag near the runway and fades to zero with height.
+- Added direct tests of nose attitude, angle of attack and world-vertical aerodynamic force so a correct response cannot pass merely because inertial altitude continues in the old direction for a moment.
+- Added a pitch-integrator sign check and matched-state positive/negative elevator, aileron and rudder manoeuvres.
+- Corrected the PPM stick-channel test mapping and now gate elevator, aileron and rudder signs independently.
+
+### Reusable electric propulsion system
+
+- Replaced the artificial throttle-to-target-RPM spool with a reusable, definition-driven electric propulsion component in `src/propulsion.*`.
+- Aircraft definitions can install one or more propulsion units, each with its own mount point, shaft axis and rotation direction.
+- Added replaceable motor, ESC, battery, drivetrain and propeller calibration values instead of embedding one opaque throttle curve in the flight solver.
+- Modelled motor back EMF, winding resistance, ESC current limiting, battery internal resistance/sag, drivetrain efficiency, combined shaft inertia and propeller aerodynamic load.
+- Merged the measured UIUC APC 14x7 Thin Electric dynamic coefficient series through advance ratio 0.6098 with the complete measured static RPM sweep.
+- Interpolated thrust and power coefficients inside the measured tables and reported whether operation remains within their covered envelope.
+- Calculated thrust, propeller torque, motor reaction torque and gyroscopic moment from the evolving shaft state.
+- Applied thrust at the configured mount rather than at the centre of gravity, preserving moment from an offset installation.
+- Added momentum-theory propwash sampling at aerodynamic panels, including spatial rejection outside the simplified wake.
+- Added separate shaft angle integration for visual propeller rotation and deterministic replay state.
+- Added live battery voltage, motor current, shaft power, advance ratio, propulsive efficiency and measured-curve coverage telemetry.
+- Added validation for coefficient ordering, density scaling, forward-speed unloading, reaction sign, current limiting, shaft convergence and phase wrapping.
+- Added a counter-rotating twin-engine symmetry test to verify cancellation of paired reaction moments.
+
+### Individual landing gear, braking, and runway contact
+
+- Replaced the global ground velocity/angular damping shortcut with three aircraft-defined, force-producing wheel contacts.
+- Added left-main, right-main and nose-wheel definitions with position, radius, spring rate, damping, rolling resistance, lateral grip, braking grip and steering range.
+- Calculated each tyre's contact velocity from translation plus rigid-body rotation.
+- Applied suspension and tyre forces at the actual contact points so their pitch, roll and yaw moments emerge from geometry.
+- Bounded longitudinal and lateral tyre forces by available friction instead of allowing unlimited corrective forces.
+- Connected nose-wheel steering to rudder input and added `B` as the explicit wheel-brake command.
+- Preserved unbraked rolling resistance while making braking a separate, measurable input.
+- Separated wheel support from conservative airframe collision proxies: ordinary gear compression supports the aircraft, while deep fuselage/wing/tail contact still produces a crash.
+- Added a bounded suspension stop to prevent runway tunnelling without turning a soft touchdown into an artificial bounce.
+- Kept excessive touchdown speed, invalid attitude and non-gear airframe contact as crash conditions.
+- Added wheel-contact count, brake state, maximum gear compression and ground-effect percentage to telemetry/HUD diagnostics.
+- Added deterministic tests for force direction, opposite steering signs, airborne isolation, braking effectiveness, soft-touchdown settling and bounded ground effect.
+- Recorded the braking regression from the same initial state: **4.28 m with braking versus 20.37 m while coasting**. This is a software regression result, not a measured tyre claim.
+
+### World-locked grass field and runway
+
+- Replaced the screen-space/procedural field treatment with a world-locked perspective ground plane in `src/ground_renderer.*`.
+- Added the compact `assets/grass-field-cheap.bmp` runtime surface while retaining the original higher-resolution grass source for future regeneration.
+- Built a mip pyramid at load time and selected levels from projected pixel footprint to reduce distant shimmer and oversized near-field texels.
+- Added bilinear sampling and wrapped world coordinates so the terrain remains effectively unbounded without a visible texture edge.
+- Added a second broad 170 m variation scale so distant terrain retains large natural colour variation instead of collapsing into one flat average green.
+- Integrated the mown runway and boundary strips in world space, allowing them to translate, rotate and converge with the terrain perspective.
+- Rendered stochastic ground at half resolution and used one filtered GDI upscale, leaving the aircraft, scenery silhouettes and HUD at full resolution.
+- Avoided synthetic distance-fog colour; the terrain's distance behaviour comes from mip filtering and world scale.
+- Added ground-renderer asset/load state to startup diagnostics.
+
+### Rural sky, hills, and treeline environment
+
+- Added `src/environment_renderer.*` and linked GDI+ for cached PNG decoding and compositing.
+- Added a baked rural daylight panorama with deliberately asymmetric photographic cloud structure.
+- Added a separate rolling-hills, hedgerow and tree-cluster layer with real transparency above the skyline.
+- Retained both the first hills/treeline iteration and the refined v2 asset as source-history evidence; v2 is the documented active scene layer.
+- Preserved an irregular feathered lower edge so the landscape blends into the rendered ground rather than ending as a rectangular strip.
+- Used alpha-premultiplied cached layers instead of re-decoding or repeatedly transforming source images during every frame.
+- Moved the panorama with camera heading so turns read as movement through a world rather than a static screen backdrop.
+- Added environment assets to the normal post-build asset copy, keeping the executable's packaged runtime tree self-contained.
+
+### Chase camera and visual truthfulness
+
+- Removed the pitch-coupled aircraft screen offset that made nose-up flight appear to move downward and nose-down flight appear to climb.
+- Anchored the aircraft to a stable chase-camera point while leaving ground perspective and AGL telemetry responsible for communicating real vertical movement.
+- Added a reusable chase-camera heading limiter in `src/chase_camera.h`.
+- Made camera heading follow horizontal flight path through a damped **22 degrees/second** limit instead of snapping to short-period aircraft yaw.
+- Rendered aircraft attitude relative to camera yaw, preventing the entire ground from appearing to swing during small yaw oscillations.
+- Added an automated maximum-camera-step gate and a yaw-relative attitude check.
+
+### Virtual RC test pilot and reports
+
+- Added `src/flight_test_report.*` as a dependency-free reporting path shared by automated and recorded-controller flights.
+- Added `--test-pilot`, which uses the simulator's real fixed 120 Hz step for a closed-loop 30-second takeoff/climb trajectory.
+- Added isolated matched-state pull/push, left/right aileron and left/right rudder comparisons after the trajectory.
+- Replaced the earlier open-loop pitch sequence after it could pass a nose-down command while the aircraft remained at a severely nose-up attitude.
+- Added finite-state, no-crash, climb, runway/lateral corridor, pitch, roll, yaw, angle-of-attack and vertical-force verdicts.
+- Added `reports/virtual-test-pilot.html` with self-contained inline SVG plots and no browser package, plotting library or network dependency.
+- Added full-resolution `reports/virtual-test-pilot.csv` telemetry plus the concise `virtual-test-pilot-oracle.csv` containing expected corridors, observations and likely fault areas.
+- Plotted the controls actually received beside X/Y/Z position, vertical speed, pitch, bank, heading, body rates, airspeed, angle of attack and stall percentage.
+- Changed correct push evaluation to consider reduction of nose-up angular rate and direct aerodynamic response, respecting real rotational inertia.
+- Made stopping an ordinary F5 transmitter recording generate matching `transmitter-latest.html` and `.csv` analysis.
+- Kept channel correlation explicitly diagnostic: a clean one-control-at-a-time recording at flying speed is still required before calling a transmitter channel reversed.
+
+### Test plan and acceptance discipline
+
+- Added `FLIGHT_TEST_PLAN.md` with an expert-development curriculum, formal test-card structure, instrumentation requirements and envelope-expansion order.
+- Added competitive simulator comparison targets and a future multi-pilot handling gate.
+- Separated deterministic simulation evidence from physical thrust-stand, battery-discharge, motor-manufacturer, real-transmitter, visual and expert-pilot acceptance.
+- Preserved the claim boundary: this release is research-backed and systematically tested, but not yet expert-pilot-proven or hardware-calibrated.
+
+### Windows application, resources, and packaging
+
+- Added `src/rc_trainer.rc` plus privately loaded B612 Mono regular/bold font resources and their OFL licence for the native Windows application.
+- Updated `CMakeLists.txt` to compile the propulsion, landing-gear, ground, environment and flight-report modules.
+- Added the chase-camera helper and Windows resource script to the RCTrainer target.
+- Added the GDI+ link dependency required by the cached environment renderer.
+- Kept the post-build copy of the full `assets` tree so aircraft, ground and environment art travel beside `RCTrainer.exe`.
+- Expanded `.gitignore` for generated reports and other runtime evidence while keeping source assets and authored documents tracked.
+- Updated the GLB conversion and textured-aircraft renderer paths for separately tagged propeller geometry and shaft-driven propeller presentation.
+
+### Build and automated verification
+
+- Updated `build.ps1 -RunTests` to wait for the GUI self-test process and propagate its real exit code instead of returning before completion.
+- Made `-RunTests` execute both the conventional deterministic suite and the virtual test-pilot card.
+- Added `-RunTestPilot` for independently rebuilding and running the virtual test-pilot path.
+- Expanded the conventional suite across yaw stability, throttle-only heading, propulsion, individual wheel contact, braking, touchdown, ground effect, chase camera, control mapping and the prior aerodynamic/replay/model gates.
+- Preserved deterministic repeatability, finite-state, parked stability, takeoff, live-style takeoff, hands-off stability, pressure scaling, stall shape, wind-relative flow, Galilean invariance, replay loop and model-contract checks.
+- Generated human-readable evidence in `self-test.txt` and the report/oracle files while keeping generated results outside version control.
+
+### Known limitations at 0.1.0
+
+- No physical thrust-stand or battery-discharge measurements have calibrated this exact virtual powertrain.
+- No current manufacturer data has independently validated the chosen replaceable motor and battery constants.
+- The ground model is deliberately low order; its brake-distance result is a regression corridor, not validated tyre/runway performance.
+- The environment is a baked visual scene, not live weather, geospatial terrain or time-of-day simulation.
+- The transmitter report cannot diagnose channel direction reliably unless the pilot records clean, isolated control movements.
+- Automated flight and rendering checks do not replace human visual acceptance, real-transmitter acceptance or experienced RC-pilot evaluation.

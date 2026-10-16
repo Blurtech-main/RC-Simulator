@@ -1,0 +1,4 @@
+// Airbus/PolarSys B612 Mono is embedded, so the cockpit readout has the
+// intended typeface even on machines where the font is not installed.
+101 RCDATA "../assets/fonts/B612Mono-Regular.ttf"
+102 RCDATA "../assets/fonts/B612Mono-Bold.ttf"

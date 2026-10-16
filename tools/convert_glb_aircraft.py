@@ -41,20 +41,25 @@ def main():
     # Skip Sketchfab's arbitrary presentation transform at root node 0; retain
     # the FBX-to-glTF axis conversion and every authored child transform.
     identity=[1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1];instances=[]
-    def walk(index,parent,skip=False):
+    def walk(index,parent,path="",skip=False):
         n=doc["nodes"][index];world=parent if skip else mat_mul(parent,local_matrix(n))
-        if "mesh" in n:instances.append((doc["meshes"][n["mesh"]],world))
-        for child in n.get("children",[]):walk(child,world)
-    for root in doc["scenes"][doc.get("scene",0)]["nodes"]:walk(root,identity,root==0)
+        node_path=(path+"/"+n.get("name",f"node{index}")).lower()
+        if "mesh" in n:instances.append((doc["meshes"][n["mesh"]],world,node_path))
+        for child in n.get("children",[]):walk(child,world,node_path)
+    for root in doc["scenes"][doc.get("scene",0)]["nodes"]:walk(root,identity,"",root==0)
     triangles=[];all_positions=[]
-    for mesh,matrix in instances:
+    for mesh,matrix,node_path in instances:
+        # Authored node names carry the moving-part identity. Part 1 is the
+        # propeller rotor; zero remains fixed airframe geometry. Future model
+        # converters can extend this manifest without material-based guessing.
+        part=1 if "propel" in node_path or "/prop" in node_path else 0
         for p in mesh["primitives"]:
             attrs=p["attributes"];positions=accessor(attrs["POSITION"]);normals=accessor(attrs["NORMAL"]) if "NORMAL" in attrs else [(0,1,0)]*len(positions);uvs=accessor(attrs["TEXCOORD_0"]) if "TEXCOORD_0" in attrs else [(0,0)]*len(positions);indices=[x[0] for x in accessor(p["indices"])]
             out=[]
             for pos,norm,uv in zip(positions,normals,uvs):
                 wp=transform(matrix,pos);wn=unit(transform(matrix,norm,0));out.append((wp,wn,uv));all_positions.append(wp)
             material=p.get("material",0)
-            for i in range(0,len(indices),3):triangles.append((out[indices[i]],out[indices[i+1]],out[indices[i+2]],material))
+            for i in range(0,len(indices),3):triangles.append((out[indices[i]],out[indices[i+1]],out[indices[i+2]],material,part))
     lo=[min(p[i] for p in all_positions) for i in range(3)];hi=[max(p[i] for p in all_positions) for i in range(3)];dims=[hi[i]-lo[i] for i in range(3)]
     # Largest dimension is wingspan, next is length, smallest is height.
     order=sorted(range(3),key=lambda i:dims[i],reverse=True);wing,length,height=order[0],order[1],order[2]
@@ -74,10 +79,10 @@ def main():
         material_pixels.append((1 if mat.get("alphaMode")=="BLEND" else 0,img.width,img.height,img.tobytes()))
     out=Path(a.output);out.parent.mkdir(parents=True,exist_ok=True)
     with out.open("wb") as f:
-        f.write(b"RCTMESH1");f.write(struct.pack("<IIIfff",2,len(triangles),len(material_pixels),scales[0],target[0],target[2]))
+        f.write(b"RCTMESH1");f.write(struct.pack("<IIIfff",3,len(triangles),len(material_pixels),scales[0],target[0],target[2]))
         for flags,w,h,pixels in material_pixels:f.write(struct.pack("<IIII",flags,w,h,len(pixels)));f.write(pixels)
         for tri in triangles:
-            for pos,norm,uv in tri[:3]:f.write(struct.pack("<8f",*remap(pos),*remap(norm,True),uv[0],1-uv[1]))
-            f.write(struct.pack("<I",tri[3]))
-    print(json.dumps({"triangles":len(triangles),"materials":len(material_pixels),"source_bounds":dims,"axis_order":order,"target_bounds_m":target,"axis_scales":scales,"output_bytes":out.stat().st_size},indent=2))
+            for pos,norm,uv in tri[:3]:f.write(struct.pack("<8f",*remap(pos),*remap(norm,True),uv[0],uv[1]))
+            f.write(struct.pack("<II",tri[3],tri[4]))
+    print(json.dumps({"triangles":len(triangles),"materials":len(material_pixels),"moving_part_triangles":sum(t[4]!=0 for t in triangles),"source_bounds":dims,"axis_order":order,"target_bounds_m":target,"axis_scales":scales,"output_bytes":out.stat().st_size},indent=2))
 if __name__=="__main__":main()

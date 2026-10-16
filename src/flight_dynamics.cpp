@@ -40,12 +40,19 @@ template<size_t N> AirfoilCoefficients interpolatePolar(const std::array<PolarPo
   return {cl,cd,-.045f};
 }
 
+AirfoilCoefficients finiteWingNaca2412(float alphaRad,float reynolds,float aspect,float efficiency,float inducedDragFactor=1.f){
+  float ad=alphaRad*180.f/PI;auto a=interpolatePolar(polar50,ad),b=interpolatePolar(polar100,ad);
+  float t=clampf(std::log(std::max(50000.f,reynolds)/50000.f)/std::log(2.f),0.f,1.f);
+  AirfoilCoefficients out{a.cl+(b.cl-a.cl)*t,a.cd+(b.cd-a.cd)*t,a.cm+(b.cm-a.cm)*t};
+  aspect=std::max(.1f,aspect);efficiency=std::max(.1f,efficiency);out.cl*=aspect/(aspect+2.f);out.cd+=inducedDragFactor*out.cl*out.cl/(PI*efficiency*aspect);return out;
+}
+
 struct Accumulator { V3 force{},moment{};float lift{},drag{},side{}; };
 void addAt(Accumulator& a,V3 force,V3 centre){a.force+=force;a.moment+=cross(centre,force);}
 
-V3 localVelocity(const FlightState&s,V3 centre,const AtmosphereSample&atm){
+V3 localVelocity(const FlightState&s,V3 centre,const AtmosphereSample&atm,V3 propwash={}){
   V3 airWorld=s.velocityWorld-atm.windWorld-atm.gustWorld;
-  return invrot(s.attitude,airWorld)+cross(s.omegaBody,centre);
+  return invrot(s.attitude,airWorld)+cross(s.omegaBody,centre)+propwash;
 }
 
 float controlFor(AeroSurfaceRole role,float centreX,Controls c){
@@ -59,8 +66,8 @@ float controlFor(AeroSurfaceRole role,float centreX,Controls c){
   }
 }
 
-void horizontalPanel(Accumulator& out,const AeroReferenceSurface&s,const FlightState&st,Controls c,const AtmosphereSample&atm,float inducedAlpha){
-  V3 vel=localVelocity(st,{s.centre.x,s.centre.y,s.centre.z},atm);float speed=len(vel);if(speed<.25f)return;
+void horizontalPanel(Accumulator& out,const AeroReferenceSurface&s,const FlightState&st,Controls c,const AtmosphereSample&atm,const AerodynamicConfiguration& config,float inducedAlpha,float inducedDragFactor,V3 propwash){
+  V3 vel=localVelocity(st,{s.centre.x,s.centre.y,s.centre.z},atm,propwash);float speed=len(vel);if(speed<.25f)return;
   float q=.5f*atm.density*speed*speed,area=s.span*s.chord;
   float ctrl=controlFor(s.role,s.centre.x,c);
   // A hinged control changes local camber; it is not an injected torque.
@@ -68,17 +75,17 @@ void horizontalPanel(Accumulator& out,const AeroReferenceSurface&s,const FlightS
   float alpha=std::atan2(-vel.y,std::max(.05f,vel.z))+deg(s.incidenceDeg)+ctrl*deg(s.maxDeflectionDeg)*hingeEffect-inducedAlpha;
   float re=atm.density*speed*s.chord/std::max(1e-7f,atm.dynamicViscosity);
   bool tail=s.role==AeroSurfaceRole::HorizontalTail||s.role==AeroSurfaceRole::Elevator;
-  auto cf=naca2412LowRe(alpha,re);
+  auto cf=finiteWingNaca2412(alpha,re,config.aspectRatio,config.spanEfficiency,inducedDragFactor);
   // The stabiliser/elevator is a symmetric section. Use its finite-tail slope
   // and smooth post-stall continuation instead of the cambered wing polar.
   if(tail){
-    float aa=std::abs(alpha),linear=4.15f*alpha;
-    cf.cl=aa<deg(14.f)?clampf(linear,-1.02f,1.02f):.78f*std::sin(2.f*alpha);
+    float aa=std::abs(alpha),linear=config.tailLiftSlopePerRad*alpha;
+    cf.cl=aa<deg(config.tailStallDeg)?clampf(linear,-1.02f,1.02f):.78f*std::sin(2.f*alpha);
     cf.cd=.018f+.075f*cf.cl*cf.cl+clampf((aa-deg(12.f))/deg(35.f),0.f,1.f)*.65f;
     cf.cm=0.f;
   }
   bool wing=s.role==AeroSurfaceRole::MainWing||s.role==AeroSurfaceRole::Aileron;
-  float dih=wing?deg(1.5f):0.f;
+  float dih=wing?deg(config.dihedralDeg):0.f;
   V3 spanAxis{std::cos(dih),(s.centre.x>=0.f?1.f:-1.f)*std::sin(dih),0};
   V3 flow=norm(vel),liftDir=norm(cross(flow,spanAxis));
   V3 lf=liftDir*(q*area*cf.cl),df=-flow*(q*area*cf.cd);
@@ -88,43 +95,54 @@ void horizontalPanel(Accumulator& out,const AeroReferenceSurface&s,const FlightS
   out.moment.x+=-cf.cm*q*area*s.chord;
 }
 
-void verticalPanel(Accumulator& out,const AeroReferenceSurface&s,const FlightState&st,Controls c,const AtmosphereSample&atm){
-  V3 vel=localVelocity(st,{s.centre.x,s.centre.y,s.centre.z},atm);float speed=len(vel);if(speed<.25f)return;
+void verticalPanel(Accumulator& out,const AeroReferenceSurface&s,const FlightState&st,Controls c,const AtmosphereSample&atm,V3 propwash){
+  V3 vel=localVelocity(st,{s.centre.x,s.centre.y,s.centre.z},atm,propwash);float speed=len(vel);if(speed<.25f)return;
   float q=.5f*atm.density*speed*speed,area=s.span*s.chord;
   float ctrl=controlFor(s.role,s.centre.x,c);
-  float beta=std::atan2(vel.x,std::max(.05f,vel.z))-ctrl*deg(s.maxDeflectionDeg)*.72f;
+  float beta=std::atan2(vel.x,std::max(.05f,vel.z))+ctrl*deg(s.maxDeflectionDeg)*.72f;
   float cl=clampf(4.1f*beta,-1.05f,1.05f),cd=.018f+.075f*cl*cl;
   V3 flow=norm(vel),sideDir=norm(cross({0,1,0},flow));
-  V3 sf=sideDir*(q*area*cl),df=-flow*(q*area*cd);
+  // Fin force opposes lateral flow; this also damps yaw rate at the aft tail.
+  // Keep positive rudder producing a positive yaw moment.
+  V3 sf=sideDir*(-q*area*cl),df=-flow*(q*area*cd);
   addAt(out,sf+df,{s.centre.x,s.centre.y,s.centre.z});out.side+=sf.x;out.drag+=-dot(df,flow);
 }
 }
 
 AirfoilCoefficients naca2412LowRe(float alphaRad,float reynolds){
-  float ad=alphaRad*180.f/PI;
-  auto a=interpolatePolar(polar50,ad),b=interpolatePolar(polar100,ad);
-  float t=clampf(std::log(std::max(50000.f,reynolds)/50000.f)/std::log(2.f),0.f,1.f);
-  AirfoilCoefficients out{a.cl+(b.cl-a.cl)*t,a.cd+(b.cd-a.cd)*t,a.cm+(b.cm-a.cm)*t};
-  // Finite-wing lift slope and induced drag, AR=7.48, e chosen from measured
-  // low-Re finite-wing guidance.  This avoids treating a 2-D polar as a wing.
-  constexpr float aspect=7.48f,e=.72f,slopeRatio=aspect/(aspect+2.f);
-  out.cl*=slopeRatio;out.cd+=out.cl*out.cl/(PI*e*aspect);
-  return out;
+  return finiteWingNaca2412(alphaRad,reynolds,7.48f,.72f);
 }
 
-AeroEvaluation evaluateAerodynamics(const FlightState&st,Controls c,const AtmosphereSample&atm){
-  AeroEvaluation r{};Accumulator acc{};const auto&model=TrainerAircraftModel::instance();
+AeroEvaluation evaluateAerodynamics(const AircraftModel&model,const FlightState&st,Controls c,const AtmosphereSample&atm,const PropulsionCommand& command){
+  AeroEvaluation r{};Accumulator acc{};
+  const auto& config=model.aerodynamics();
   V3 relWorld=st.velocityWorld-atm.windWorld-atm.gustWorld;V3 relBody=invrot(st.attitude,relWorld);
   float speed=len(relBody);r.telemetry.relativeAirBody=relBody;r.telemetry.airspeed=speed;
   r.telemetry.aoa=std::atan2(-relBody.y,std::max(.05f,relBody.z));
   r.telemetry.beta=std::atan2(relBody.x,std::sqrt(relBody.y*relBody.y+relBody.z*relBody.z));
-  r.telemetry.reynolds=atm.density*speed*.23f/std::max(1e-7f,atm.dynamicViscosity);
-  auto wingCf=naca2412LowRe(r.telemetry.aoa+deg(1.5f),r.telemetry.reynolds);
-  float induced=wingCf.cl/(PI*.72f*7.48f);
-  float tailDownwash=2.f*wingCf.cl/(PI*7.48f);
+  r.telemetry.reynolds=atm.density*speed*config.referenceChordM/std::max(1e-7f,atm.dynamicViscosity);
+  auto wingCf=finiteWingNaca2412(r.telemetry.aoa+deg(config.wingIncidenceDeg),r.telemetry.reynolds,config.aspectRatio,config.spanEfficiency);
+  // McCormick-style ground-effect factor for induced flow. At large wing
+  // height it tends to one; near the runway it reduces induced drag/downwash.
+  V3 wingCentreWorld=st.positionWorld+rotate(st.attitude,{0,.105f,.03f});
+  float heightOverSpan=std::max(0.f,wingCentreWorld.y)/std::max(.01f,model.wingspan());
+  float groundRatio=16.f*heightOverSpan;
+  float inducedDragFactor=(groundRatio*groundRatio)/(1.f+groundRatio*groundRatio);
+  r.telemetry.groundEffect=1.f-inducedDragFactor;
+  float induced=wingCf.cl/(PI*config.spanEfficiency*config.aspectRatio)*inducedDragFactor;
+  float tailDownwash=2.f*wingCf.cl/(PI*config.aspectRatio)*inducedDragFactor;
+  const auto& units=model.propulsionUnits();if(units.size()>FlightState::MaxPropulsionUnits){r.modelValid=false;return r;}r.propulsionCount=units.size();
+  for(size_t i=0;i<r.propulsionCount;i++){
+    float throttle=i<command.count?command.throttle[i]:c.thr;
+    r.propulsion[i]=evaluatePropulsion(units[i],st.propulsion[i],throttle,relBody,st.omegaBody,atm.density);
+    acc.force+=r.propulsion[i].forceBody;acc.moment+=r.propulsion[i].momentBody;
+    const auto&t=r.propulsion[i].telemetry;r.telemetry.thrust+=t.thrustN;r.telemetry.propTorque+=t.propellerTorqueNm;
+    if(i==0){r.telemetry.propRpm=t.rpm;r.telemetry.motorCurrent=t.motorCurrentA;r.telemetry.batteryVoltage=t.batteryVoltageV;r.telemetry.shaftPower=t.shaftPowerW;r.telemetry.propEfficiency=t.propulsiveEfficiency;r.telemetry.advanceRatio=t.advanceRatio;r.telemetry.curveCoverage=t.curveCoverage;}
+  }
   for(const auto&s:model.aeroSurfaces()){
-    if(s.role==AeroSurfaceRole::Fin||s.role==AeroSurfaceRole::Rudder)verticalPanel(acc,s,st,c,atm);
-    else horizontalPanel(acc,s,st,c,atm,(s.role==AeroSurfaceRole::MainWing||s.role==AeroSurfaceRole::Aileron)?induced:tailDownwash);
+    V3 wash{};V3 point{s.centre.x,s.centre.y,s.centre.z};for(size_t i=0;i<r.propulsionCount;i++)wash+=propwashVelocityAt(units[i],r.propulsion[i],point);
+    if(s.role==AeroSurfaceRole::Fin||s.role==AeroSurfaceRole::Rudder)verticalPanel(acc,s,st,c,atm,wash);
+    else horizontalPanel(acc,s,st,c,atm,config,(s.role==AeroSurfaceRole::MainWing||s.role==AeroSurfaceRole::Aileron)?induced:tailDownwash,inducedDragFactor,wash);
   }
   // The local panels provide roll-rate damping, but the previous slice omitted
   // the Cessna trainer's high-wing/dihedral restoring tendency. Consequently
@@ -134,37 +152,35 @@ AeroEvaluation evaluateAerodynamics(const FlightState&st,Controls c,const Atmosp
   V3 worldUpBody=invrot(st.attitude,{0,1,0});
   float bank=std::atan2(worldUpBody.x,worldUpBody.y);
   float neutralAileron=clampf(1.f-std::abs(c.ail),0.f,1.f);
-  float rollRestoring=-bank*(.5f*atm.density*speed*speed)*(.396f*model.wingspan())*.55f*neutralAileron;
+  float rollRestoring=-bank*(.5f*atm.density*speed*speed)*(config.wingAreaM2*model.wingspan())*config.rollStabilityCoefficient*neutralAileron;
   acc.moment.z+=rollRestoring;
   if(speed>.25f){
     V3 flow=norm(relBody);float q=.5f*atm.density*speed*speed;
-    V3 fuselageDrag=-flow*(q*.022f);addAt(acc,fuselageDrag,{0,0,.02f});acc.drag+=q*.022f;
+    V3 fuselageDrag=-flow*(q*config.fuselageDragAreaM2);addAt(acc,fuselageDrag,{0,0,.02f});acc.drag+=q*config.fuselageDragAreaM2;
   }
-  // UIUC Volume 4 APC 14x7 Thin Electric wind-tunnel fit. At 5963 rpm the
-  // measured CT falls from .0933 at J=.111 to .0622 at J=.336; static CT is
-  // .1003 and CP=.03115 at 7480 rpm. Advance ratio uses the local axial flow.
-  r.targetPropRpm=clampf(c.thr,0.f,1.f)*7480.f;
-  float n=std::max(0.f,st.propRpm)/60.f,D=.3556f,J=std::max(0.f,relBody.z)/(std::max(1.f,n)*D);
-  float ct=clampf(.1003f-.1135f*J,-.012f,.1003f);
-  float cp=clampf(.03115f-.015f*std::max(0.f,J-.25f),.006f,.03115f);
-  float cq=cp/(2.f*PI);
-  float thrust=ct*atm.density*n*n*std::pow(D,4.f),torque=cq*atm.density*n*n*std::pow(D,5.f);
-  V3 propForce{0,0,thrust};addAt(acc,propForce,{0,0,.64f});acc.moment.z-=torque*TrainerPropRollCoupling;
+  // Optional trainer assistance compensates the physical powertrain reaction
+  // at centred aileron. The unassisted path retains the complete motor torque.
+  // Without trim a persistent small bank still creates an endless gentle turn.
+  // The caller elects to add this compensation; the generic solver does not.
   r.forceBody=acc.force;r.momentBody=acc.moment;
   r.telemetry.forceBody=acc.force;r.telemetry.momentBody=acc.moment;r.telemetry.lift=acc.lift;r.telemetry.drag=acc.drag;
-  r.telemetry.sideForce=acc.side;r.telemetry.thrust=thrust;r.telemetry.propTorque=torque;r.telemetry.cl=wingCf.cl;r.telemetry.cd=wingCf.cd;
+  r.telemetry.sideForce=acc.side;r.telemetry.cl=wingCf.cl;r.telemetry.cd=wingCf.cd;
   r.telemetry.stallFraction=clampf((std::abs(r.telemetry.aoa)-deg(9.f))/deg(10.f),0.f,1.f);
-  r.telemetry.loadFactor=acc.lift/(TrainerMassKg*9.80665f);
+  r.telemetry.loadFactor=acc.lift/(model.massKg()*9.80665f);
   return r;
 }
 
-void integrateFlightState(FlightState&s,const AeroEvaluation&a,float dt){
-  float tau=a.targetPropRpm>s.propRpm?.16f:.28f;s.propRpm+=(a.targetPropRpm-s.propRpm)*(1.f-std::exp(-dt/tau));
-  V3 forceWorld=rotate(s.attitude,a.forceBody)+V3{0,-TrainerMassKg*9.80665f,0};
-  s.velocityWorld+=forceWorld/TrainerMassKg*dt;s.positionWorld+=s.velocityWorld*dt;
-  V3 iw{TrainerInertiaKgM2.x*s.omegaBody.x,TrainerInertiaKgM2.y*s.omegaBody.y,TrainerInertiaKgM2.z*s.omegaBody.z};
+void integrateFlightState(const AircraftModel&model,FlightState&s,const AeroEvaluation&a,float dt){
+  for(size_t i=0;i<a.propulsionCount;i++)integratePropulsion(s.propulsion[i],a.propulsion[i],dt);
+  float mass=model.massKg();V3 inertia=model.inertiaKgM2();V3 forceWorld=rotate(s.attitude,a.forceBody)+V3{0,-mass*9.80665f,0};
+  s.velocityWorld+=forceWorld/mass*dt;s.positionWorld+=s.velocityWorld*dt;
+  V3 iw{inertia.x*s.omegaBody.x,inertia.y*s.omegaBody.y,inertia.z*s.omegaBody.z};
   V3 rhs=a.momentBody-cross(s.omegaBody,iw);
-  V3 alpha{rhs.x/TrainerInertiaKgM2.x,rhs.y/TrainerInertiaKgM2.y,rhs.z/TrainerInertiaKgM2.z};
+  V3 alpha{rhs.x/inertia.x,rhs.y/inertia.y,rhs.z/inertia.z};
   s.omegaBody+=alpha*dt;Quat spin{0,s.omegaBody.x,s.omegaBody.y,s.omegaBody.z};Quat dq=qmul(s.attitude,spin);
   s.attitude=qnorm({s.attitude.w+.5f*dq.w*dt,s.attitude.x+.5f*dq.x*dt,s.attitude.y+.5f*dq.y*dt,s.attitude.z+.5f*dq.z*dt});
 }
+
+AeroEvaluation evaluateAerodynamics(const AircraftModel&model,const FlightState&st,Controls c,const AtmosphereSample&atm){return evaluateAerodynamics(model,st,c,atm,{});}
+AeroEvaluation evaluateAerodynamics(const FlightState&st,Controls c,const AtmosphereSample&atm){return evaluateAerodynamics(TrainerAircraftModel::instance(),st,c,atm,{});}
+void integrateFlightState(FlightState&s,const AeroEvaluation&a,float dt){integrateFlightState(TrainerAircraftModel::instance(),s,a,dt);}
