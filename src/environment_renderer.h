@@ -14,7 +14,8 @@ public:
   bool horizonAvailable() const { return horizon_.bitmap != nullptr; }
   const std::wstring& error() const { return error_; }
   void drawSky(HDC target, int width, int bottom, float forwardX, float forwardZ) const;
-  void drawHorizon(HDC target, int width, int horizonY, float forwardX, float forwardZ) const;
+  void drawHorizon(HDC target, int width, int horizonY, float forwardX, float forwardZ,
+                   float worldX, float worldZ) const;
 
 private:
   struct Layer {
@@ -24,7 +25,9 @@ private:
     int width{}, height{};
   };
   bool loadPng(const std::wstring& relativePath, Layer& layer, bool premultiplyAlpha);
-  static int panoramaOffset(int width, float forwardX, float forwardZ);
+  static int panoramaOffset(int width, float forwardX, float forwardZ,
+                            float worldX = 0.f, float worldZ = 0.f,
+                            float effectiveRadius = 0.f);
   static void release(Layer& layer);
 
   Layer sky_, horizon_;

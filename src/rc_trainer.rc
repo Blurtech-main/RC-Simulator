@@ -2,3 +2,4 @@
 // intended typeface even on machines where the font is not installed.
 101 RCDATA "../assets/fonts/B612Mono-Regular.ttf"
 102 RCDATA "../assets/fonts/B612Mono-Bold.ttf"
+1 ICON "../assets/ui/parrot-wing.ico"

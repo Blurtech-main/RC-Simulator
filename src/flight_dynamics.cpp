@@ -140,9 +140,20 @@ AeroEvaluation evaluateAerodynamics(const AircraftModel&model,const FlightState&
     if(i==0){r.telemetry.propRpm=t.rpm;r.telemetry.motorCurrent=t.motorCurrentA;r.telemetry.batteryVoltage=t.batteryVoltageV;r.telemetry.shaftPower=t.shaftPowerW;r.telemetry.propEfficiency=t.propulsiveEfficiency;r.telemetry.advanceRatio=t.advanceRatio;r.telemetry.curveCoverage=t.curveCoverage;}
   }
   for(const auto&s:model.aeroSurfaces()){
-    V3 wash{};V3 point{s.centre.x,s.centre.y,s.centre.z};for(size_t i=0;i<r.propulsionCount;i++)wash+=propwashVelocityAt(units[i],r.propulsion[i],point);
-    if(s.role==AeroSurfaceRole::Fin||s.role==AeroSurfaceRole::Rudder)verticalPanel(acc,s,st,c,atm,wash);
-    else horizontalPanel(acc,s,st,c,atm,config,(s.role==AeroSurfaceRole::MainWing||s.role==AeroSurfaceRole::Aileron)?induced:tailDownwash,inducedDragFactor,wash);
+    // A propeller slipstream covers only part of a wing or tail. Sampling one
+    // centre point used to apply the peak centreline wash to the *entire* tail
+    // while missing the inner wing roots, creating a violent throttle-only
+    // pitch-up/stall/nose-drop cycle. Divide powered surfaces into spanwise
+    // strips so only the geometry actually inside the contracted wake receives
+    // propwash; strip areas still sum exactly to the declared surface area.
+    bool powered=false;for(size_t i=0;i<r.propulsionCount;i++)powered|=r.propulsion[i].telemetry.inducedVelocityMS>.01f;
+    const int slices=powered?16:1;V3 spanDirection=norm({s.spanAxis.x,s.spanAxis.y,s.spanAxis.z});
+    for(int sliceIndex=0;sliceIndex<slices;sliceIndex++){
+      AeroReferenceSurface slice=s;slice.span=s.span/float(slices);float offset=(float(sliceIndex)+.5f)/float(slices)-.5f;slice.centre.x+=spanDirection.x*offset*s.span;slice.centre.y+=spanDirection.y*offset*s.span;slice.centre.z+=spanDirection.z*offset*s.span;
+      V3 wash{};V3 point{slice.centre.x,slice.centre.y,slice.centre.z};for(size_t i=0;i<r.propulsionCount;i++)wash+=propwashVelocityAt(units[i],r.propulsion[i],point);
+      if(s.role==AeroSurfaceRole::Fin||s.role==AeroSurfaceRole::Rudder)verticalPanel(acc,slice,st,c,atm,wash);
+      else horizontalPanel(acc,slice,st,c,atm,config,(s.role==AeroSurfaceRole::MainWing||s.role==AeroSurfaceRole::Aileron)?induced:tailDownwash,inducedDragFactor,wash);
+    }
   }
   // The local panels provide roll-rate damping, but the previous slice omitted
   // the Cessna trainer's high-wing/dihedral restoring tendency. Consequently

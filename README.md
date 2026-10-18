@@ -26,7 +26,7 @@ Everything in this section predates formal versioning. Its historical labels des
 The smaller steps below are reconstructed from the surviving source, diffs, diagnostics, and worktree snapshots. They are listed in development order without pretending that every step was a separate release.
 
 1. **Project and controller foundation** — established the native Win32 trainer, DirectInput discovery and hot-plug retry, keyboard fallback, persistent calibration/mapping, fixed-step simulation, replay CSV, self-test entry point, and standalone PPM probe.
-2. **PPM usability cleanup** — removed intrusive signal-hit dialogue behaviour in favour of the persistent HUD state and timestamped hit log; added automatic preference for Native Instruments Komplete Audio hardware while retaining manual F2 source cycling and fallback selection.
+2. **PPM usability cleanup** — removed intrusive signal-hit dialogue behaviour in favour of the persistent HUD state and timestamped hit log; added automatic preference for Native Instruments Komplete Audio hardware while retaining manual `T` source cycling and fallback selection.
 3. **Crash-reset and grass-range correction** — made crash recovery restart the aircraft and lesson cleanly after two seconds, reset the countdown when the crash condition clears, kept calibration/replay state outside that reset, and extended/thinned the procedural grass and grid rather than letting the field visibly terminate near 120 m.
 4. **Aircraft pitch-visibility correction** — stopped drawing an aircraft cue that communicated bank alone; derived pitch from the real forward vector so elevator motion remained visible even after banking.
 5. **Flight-school second slice** — added the staged takeoff/climb/cruise/glide/landing lesson, objective/timer/scoring state, recording controls, looping playback, manual override, clear behaviour, and the first deterministic takeoff/replay tests.
@@ -39,8 +39,10 @@ The smaller steps below are reconstructed from the surviving source, diffs, diag
 12. **Unmasked takeoff roll-stability correction** — added a neutral-aileron takeoff regression after discovering both older takeoff checks continuously applied hidden aileron correction. Added the previously omitted dynamic-pressure-scaled high-wing/dihedral restoring moment, preventing measured propeller reaction torque from accumulating bank forever and making an ordinary throttle-and-elevator takeoff inevitably keel diagonally into the ground.
 13. **Trainer elevator-authority correction** — reduced the elevator's exaggerated hinge effectiveness after measuring roughly 1 N·m of pitching-moment change at only 25% stick. The live-input takeoff regression now uses a finite keyboard-style rotation pulse with neutral aileron rather than hidden roll correction or indefinitely held elevator, covering the reported throttle-plus-pitch sequence without forcing a stall.
 14. **Live-style takeoff regression patch** — added a second automated takeoff using the same gradual throttle ramp and post-11.5 m/s elevator rotation expected from keyboard operation, and made it a mandatory aerodynamic-suite gate. The current recorded self-test includes and passes this path.
-15. **Controls-on-demand overlay patch** — changed the aerodynamic controls/help overlay from visible-by-default to hidden on launch. It now appears only when the pilot presses F1, leaving the runway view clear at startup.
+15. **Controls-on-demand overlay patch** — changed the aerodynamic controls/help overlay from visible-by-default to hidden on launch. It now appears only when the pilot presses `R`, leaving the runway view clear at startup.
 16. **Virtual RC test-pilot and camera-truth patch** — added deterministic and real-transmitter HTML/CSV flight reports covering received controls, X/Y/Z motion, pitch/bank/heading, vertical speed, airspeed, angle of attack, stall and signed control response. Removed the pitch-coupled aircraft screen offset that made nose-up look like downward travel and nose-down look like upward travel in the chase view.
+17. **Trajectory truth, friendly validation dashboard, and live troubleshooting patch** — added main-view trajectory layers plus a polished clickable dashboard with textured landscape top/side views, route-card icons, close-follow, padded overview, simplified Wind Tunnel, corridor boundaries, and visible deviation whiskers; anomaly/readout cards; synchronized plots; issue-marker, record, and export buttons; five fixed expert routes; and a no-route held-control forecast that runs the real solver on a cloned aircraft. Selecting a fixed route now resets to its repeatable start and engages a bounded virtual RC pilot which uses ordinary aileron/elevator/throttle/rudder inputs to *attempt* the route; it never teleports the aircraft onto the line, so the exported deviation is a genuine control/physics result. Actual/reference errors are colour-coded and exported, while a separate 10 Hz Codex feed maintains an atomic live snapshot and unique append-only historical session containing controls, motion, aero/propulsion/ground telemetry, trajectory errors, derived raising/bumpiness/sluggishness/oscillation scores, and exact user issue markers.
+18. **Neutral-stick full-throttle pitch correction** — replaced whole-surface centre-point propwash with spanwise strip sampling. Only the portions of the wing and tail that actually intersect the contracted propeller wake now receive wash, removing the exaggerated tail force that caused a pitch-up/stall followed by a severe uncommanded nose drop. Added a mandatory full-throttle, neutral-elevator regression covering pitch angle, pitch rate, airborne angle of attack and crash state.
 
 ---
 
@@ -173,7 +175,7 @@ Status: **implemented on `main`; not yet packaged as a release**
 - Changed keyboard aileron from immediate full deflection to a modest 35% target with easing, making the digital fallback behave more like a trainer input.
 - Added held up/down-arrow elevator control: Down represents pulling the stick back for nose-up rotation, while Up commands nose-down elevator.
 - Retained the mouse wheel as a persistent elevator input/trim and combined it safely with the temporary arrow-key elevator command.
-- Centralised reset handling so F3, Space, and delayed crash recovery also clear keyboard throttle, elevator, aileron, held-key state, timer state, frame count, aircraft state, and lesson state.
+- Centralised reset handling so `Y`, Space, and delayed crash recovery also clear keyboard throttle, elevator, aileron, held-key state, timer state, frame count, aircraft state, and lesson state.
 - Prevented held key repeat from repeatedly toggling one-shot commands such as help or replay controls.
 
 ### Replay and fresh-launch safety
@@ -181,7 +183,7 @@ Status: **implemented on `main`; not yet packaged as a release**
 - Removed automatic replay loading during application startup.
 - Fixed a saved replay that ended in a crash making a new session appear to crash immediately on launch.
 - Kept the saved `replays/latest.csv` file intact until the pilot deliberately clears it.
-- Made F6 the explicit action that loads and loops the saved flight.
+- Made `O` the explicit action that loads and loops the saved flight.
 - Preserved immediate Manual Override hand-back to the live controller.
 - Preserved exact interval capture from **Record Flight** to **Stop**.
 - Preserved deterministic frame-by-frame CSV state and input storage.
@@ -273,7 +275,7 @@ The current `controller-diagnostic.txt` additionally records successful Windows 
 - This is a research-backed engineering model, not certified Cessna flight-test equivalence.
 - Exact RC mass distribution, hinge geometry, motor/ESC constants, thrust-stand curves, and full-airframe wind-tunnel data remain replaceable calibration inputs because measurements for this specific virtual airframe are not available.
 - Rain and turbulence exist as solver inputs but deliberately have no claimed aerodynamic effect yet.
-- The in-app F1 help overlay still contains the old statement that a saved flight starts automatically. Runtime and README behaviour are the opposite: every launch starts live, and F6 loads the replay. This wording remains to be corrected in a later code patch.
+- Corrected the in-app `R` help overlay so it states that every launch starts live and `O` explicitly loads the replay.
 - Lesson scoring still exists in the lesson state, but the current HUD line displays live control values and elapsed time instead of the score. README wording that says the HUD presents the score is therefore stale.
 - The direct-build fallback command predates the split source files and asset renderer; the CMake/`build.ps1` path is the authoritative build route for this snapshot.
 
@@ -300,6 +302,8 @@ Status: **released foundation on `main`**
 ### DirectInput controller support
 
 - Added DirectInput 8 controller discovery.
+- Added automatic DualSense / PS5 controller detection and a conventional DX6i Mode 2 two-stick layout: left stick horizontal rudder, left stick vertical throttle, right stick horizontal aileron, and right stick vertical elevator. Stick up is high throttle and pulling the right stick down is nose-up.
+- Prefer a connected DualSense when several game controllers are present, keep its calibration in `profiles/dualsense.ini` so transmitter-adapter settings cannot overwrite it, and rediscover it after a disconnect/reconnect.
 - Added enumeration of attached game controllers.
 - Added eight-axis input capture.
 - Added cooperative background/non-exclusive device access.
@@ -335,7 +339,7 @@ Status: **released foundation on `main`**
 - Added PPM hit logging with timestamp, threshold, polarity, channel count, and frame duration.
 - Replaced intrusive hit notifications with persistent HUD feedback and log evidence, so candidate pulses no longer interrupt the simulator.
 - Added a visible **PPM HIT** state before full lock and **PPM LOCKED** after stable decoding.
-- Added F2 cycling through available Windows audio capture sources.
+- Added `T` cycling through available Windows audio capture sources.
 - Added automatic preference for a connected Native Instruments Komplete Audio interface.
 - Added fallback to the last-listed Windows audio input when a Komplete interface is not found.
 - Added light exponential channel smoothing.
@@ -363,14 +367,14 @@ Status: **released foundation on `main`**
 - Added a visible crash countdown.
 - Added automatic aircraft and lesson restart two seconds after a crash.
 - Kept controller calibration and saved replay data intact across a crash restart.
-- Added F3 lesson restart and Space runway reset.
+- Added `Y` lesson restart and Space runway reset.
 
 ### Replay system
 
 - Added deterministic CSV flight recording to `replays/latest.csv`.
 - Recorded frame number; aileron, elevator, throttle, and rudder; position; velocity; quaternion; angular velocity; crash state; angle of attack; airspeed; lift; drag; and thrust.
 - Added **Record Flight**, **Stop**, **Clear**, and **Manual Override** controls.
-- Added F5 start/stop recording, F6 replay loading, and F7 playback stop.
+- Added `I` start/stop recording, `O` replay loading, and `P` playback stop.
 - Added replay parsing that skips malformed rows instead of poisoning the complete load.
 - Added continuous replay looping.
 - Added immediate Manual Override from playback to the live input source.
@@ -384,7 +388,7 @@ Status: **released foundation on `main`**
 - Mapped the mouse wheel to persistent right-stick vertical movement for elevator in 10% steps.
 - Mapped left/right arrows to right-stick horizontal movement for aileron.
 - Added Escape to close the trainer.
-- Added F1 help-overlay toggling.
+- Added `R` help-overlay toggling.
 - The original fallback polled global key state; the current focus-safety update above replaces it with window-scoped input.
 
 ### Original field, camera, and aircraft cues
@@ -409,7 +413,7 @@ Status: **released foundation on `main`**
 - Added eight live input bars.
 - Added a four-function mapping panel showing the selected function, assigned axis, and reversed state.
 - Added an on-screen calibration instruction.
-- Added an F1 help panel covering replay, manual override, audio source selection, lesson restart, calibration, runway reset, exit, and keyboard fallback.
+- Added an `R` help panel covering replay, manual override, audio source selection, lesson restart, calibration, runway reset, exit, and keyboard fallback.
 
 ### Foundation self-tests and diagnostics
 
@@ -433,6 +437,9 @@ This ledger is intentionally redundant: it makes small patches discoverable even
 | `src/flight_math.h` | Shared vector and quaternion mathematics extracted from the original application. |
 | `src/flight_dynamics.*` | NACA 2412 data, finite-wing correction, panel forces, post-stall continuation, tail/fin/control response, propeller coefficients, atmosphere-relative flow, rigid-body integration, and telemetry. |
 | `src/flight_test_report.*` | Dependency-free virtual test-pilot CSV/HTML generation, X/Y/Z and attitude plots, control-response screening, and deterministic test-card verdicts. |
+| `src/trajectory_diagnostics.*` | Fixed expert routes, held-control physics forecasts, top/side/main trajectory rendering, deviation metrics, and analysis-ready CSV export. |
+| `src/route_pilot.*` | Bounded four-channel virtual RC pilot used by repeatable preset-route tests; produces realistic control intent without modifying aircraft state. |
+| `src/troubleshooting_feed.*` | Atomic live Codex snapshot, append-only per-flight JSONL history, full troubleshooting telemetry, anomaly scores, lifecycle events, and user issue markers. |
 | `src/ground_dynamics.*` | Per-wheel suspension, rolling/braking resistance, lateral tyre grip, nose-wheel steering, force-at-contact moments, and contact telemetry. |
 | `src/ground_renderer.*` | Perspective-correct world ground, fine and macro bitmap scales, mip-filtered bilinear sampling, mown runway integration, and half-resolution shading without synthetic distance fog. |
 | `src/environment_renderer.*` | Cached baked sky and alpha-premultiplied hills/treeline layers, panoramic heading movement, and transparent ground overlap. |
@@ -440,6 +447,7 @@ This ledger is intentionally redundant: it makes small patches discoverable even
 | `src/textured_aircraft_renderer.*` | Validated runtime asset loading, two-pass depth-tested rasterisation, bilinear texture sampling, lighting, canopy correction, and alpha compositing. |
 | `tools/ppm_probe.cpp` | Standalone Windows audio capture and evidence tool for locating likely PPM signal thresholds and frame intervals. |
 | `tools/convert_glb_aircraft.py` | Reproducible GLB conversion, axis/dimension normalisation, transform baking, full-resolution material embedding, and runtime-mesh output. |
+| `tools/inspect_live_flight.ps1` | Read-only summary of the active session's latest snapshot, recent extrema, anomaly peaks, and marked user issues. |
 | `assets/grass-field-cheap.bmp` | Compact runtime grass surface loaded from the executable's packaged asset directory. |
 | `assets/grass-tile.png` | Original high-resolution source grass asset retained for future asset regeneration. |
 | `assets/environment/sky-rural-v1.png` | Baked rural daylight sky panorama with asymmetric photographic clouds. |
@@ -489,7 +497,7 @@ Replaced the artificial throttle-to-target-RPM spool with a reusable electric pr
 
 Motor back EMF, winding resistance, ESC current limiting, battery sag, drivetrain efficiency, propeller load and combined shaft inertia now determine RPM. The airframe receives actual mount-offset force, motor reaction and gyroscopic moments. Propwash reaches aerodynamic panels through a low-order momentum-theory wake. Shaft phase drives the separately tagged propeller mesh and is recorded in replay data.
 
-The simulator starts in `REALISTIC` mode with full propulsion reaction. F4 explicitly enables the old centred-aileron trainer compensation. The HUD now reports volts, amps, shaft watts and advance ratio, and warns when operation leaves the measured propeller envelope.
+The simulator starts in `REALISTIC` mode with full propulsion reaction. `U` explicitly enables the old centred-aileron trainer compensation. The HUD now reports volts, amps, shaft watts and advance ratio, and warns when operation leaves the measured propeller envelope.
 
 The self-test now gates measured-map interpolation, definition validation, density scaling, forward-speed unloading, reaction sign, counter-rotating twin cancellation, current-limited shaft convergence, phase integration and slipstream sampling. The build script now waits for the Windows GUI self-test process and enforces its real exit code. Build and automated tests pass; physical thrust-stand, battery-discharge, motor-manufacturer and expert RC pilot validation remain open acceptance layers.
 
@@ -507,7 +515,7 @@ Added [FLIGHT_TEST_PLAN.md](FLIGHT_TEST_PLAN.md), which turns authoritative flig
 
 Added a built-in `--test-pilot` card that performs a gradual-throttle takeoff, finite rotation, deliberate pull, and deliberate push at the same fixed 120 Hz step used by the simulator. It writes a portable `reports/virtual-test-pilot.html` plus complete CSV telemetry. The report overlays the controls actually received with X/Y/Z position, vertical speed, pitch, bank, heading, body rates, airspeed, angle of attack and stall percentage, then issues finite-state, crash, climb, lateral-stability and signed elevator-response verdicts. A correct push is judged first by reduction of nose-up angular rate, because real rotational inertia can let geometric pitch continue rising briefly.
 
-Stopping an ordinary F5 transmitter recording now produces `reports/transmitter-latest.html` and `.csv` through the same analysis path. The control-sign correlation is deliberately a screening tool: a pilot should move one control at a time at flying speed before treating a warning as proof of a reversed channel.
+Stopping an ordinary `I` transmitter recording now produces `reports/transmitter-latest.html` and `.csv` through the same analysis path. The control-sign correlation is deliberately a screening tool: a pilot should move one control at a time at flying speed before treating a warning as proof of a reversed channel.
 
 Corrected the chase-camera presentation independently of the physics. The old aircraft screen centre was attached to the pitch-shifted horizon, so nose-up moved the entire aircraft downward and nose-down moved it upward by an amount comparable to several metres of apparent altitude. The aircraft now remains on a stable chase-camera anchor; world-locked ground perspective and the AGL telemetry show real altitude change. The latest conventional suite and the new scripted report both pass. This does not yet constitute a real-transmitter handling acceptance run.
 
@@ -533,7 +541,7 @@ Version 0.1.0 establishes the current simulator as the first numbered checkpoint
 - Added explicit regressions for both sideslip signs and both yaw-rate signs rather than validating only one direction.
 - Added two 60-second throttle-only trials with centred flight controls: one using a keyboard-style throttle ramp and one beginning at full throttle.
 - Added optional centred-aileron trainer compensation for residual propulsion roll torque. The compensation fades away as the pilot commands aileron, so it cannot conceal deliberate roll input.
-- Changed startup to the unassisted `REALISTIC` path. The complete motor/propeller reaction is therefore active by default; F4 explicitly toggles trainer assistance.
+- Changed startup to the unassisted `REALISTIC` path. The complete motor/propeller reaction is therefore active by default; `U` explicitly toggles trainer assistance.
 - Moved mass, inertia and aerodynamic constants into the aircraft definition so the solver is no longer tied to hidden Cessna-specific literals.
 - Added configuration-owned reference chord, aspect ratio, span efficiency, wing incidence, dihedral, wing area, roll stability, tail lift slope/stall angle and fuselage drag area.
 - Retained the fixed 120 Hz six-degree-of-freedom integration, panel-local airflow, atmosphere-relative velocity, NACA 2412 interpolation, post-stall continuation and rigid-body gyroscopic term.
@@ -552,7 +560,7 @@ Version 0.1.0 establishes the current simulator as the first numbered checkpoint
 - Interpolated thrust and power coefficients inside the measured tables and reported whether operation remains within their covered envelope.
 - Calculated thrust, propeller torque, motor reaction torque and gyroscopic moment from the evolving shaft state.
 - Applied thrust at the configured mount rather than at the centre of gravity, preserving moment from an offset installation.
-- Added momentum-theory propwash sampling at aerodynamic panels, including spatial rejection outside the simplified wake.
+- Added momentum-theory propwash sampling across sixteen spanwise strips per powered aerodynamic surface, including spatial rejection outside the simplified wake. This prevents peak centreline wash from being applied to an entire tail or omitted from the inner wing.
 - Added separate shaft angle integration for visual propeller rotation and deterministic replay state.
 - Added live battery voltage, motor current, shaft power, advance ratio, propulsive efficiency and measured-curve coverage telemetry.
 - Added validation for coefficient ordering, density scaling, forward-speed unloading, reaction sign, current limiting, shaft convergence and phase wrapping.
@@ -617,7 +625,7 @@ Version 0.1.0 establishes the current simulator as the first numbered checkpoint
 - Added full-resolution `reports/virtual-test-pilot.csv` telemetry plus the concise `virtual-test-pilot-oracle.csv` containing expected corridors, observations and likely fault areas.
 - Plotted the controls actually received beside X/Y/Z position, vertical speed, pitch, bank, heading, body rates, airspeed, angle of attack and stall percentage.
 - Changed correct push evaluation to consider reduction of nose-up angular rate and direct aerodynamic response, respecting real rotational inertia.
-- Made stopping an ordinary F5 transmitter recording generate matching `transmitter-latest.html` and `.csv` analysis.
+- Made stopping an ordinary `I` transmitter recording generate matching `transmitter-latest.html` and `.csv` analysis.
 - Kept channel correlation explicitly diagnostic: a clean one-control-at-a-time recording at flying speed is still required before calling a transmitter channel reversed.
 
 ### Test plan and acceptance discipline
@@ -642,7 +650,7 @@ Version 0.1.0 establishes the current simulator as the first numbered checkpoint
 - Updated `build.ps1 -RunTests` to wait for the GUI self-test process and propagate its real exit code instead of returning before completion.
 - Made `-RunTests` execute both the conventional deterministic suite and the virtual test-pilot card.
 - Added `-RunTestPilot` for independently rebuilding and running the virtual test-pilot path.
-- Expanded the conventional suite across yaw stability, throttle-only heading, propulsion, individual wheel contact, braking, touchdown, ground effect, chase camera, control mapping and the prior aerodynamic/replay/model gates.
+- Expanded the conventional suite across yaw stability, throttle-only heading and neutral-stick pitch response, propulsion, individual wheel contact, braking, touchdown, ground effect, chase camera, control mapping and the prior aerodynamic/replay/model gates.
 - Preserved deterministic repeatability, finite-state, parked stability, takeoff, live-style takeoff, hands-off stability, pressure scaling, stall shape, wind-relative flow, Galilean invariance, replay loop and model-contract checks.
 - Generated human-readable evidence in `self-test.txt` and the report/oracle files while keeping generated results outside version control.
 

@@ -45,7 +45,10 @@ TrainerAircraftModel::TrainerAircraftModel(){
     {L"right wing",AeroSurfaceRole::MainWing,{.43f,.105f,.03f},{1,0,0},.86f,.203f,1.5f,0},
     {L"left aileron",AeroSurfaceRole::Aileron,{-.59f,.11f,-.06f},{1,0,0},.39f,.06f,0,20},
     {L"right aileron",AeroSurfaceRole::Aileron,{.59f,.11f,-.06f},{1,0,0},.39f,.06f,0,20},
-    {L"stabiliser",AeroSurfaceRole::HorizontalTail,{0,.04f,-.50f},{1,0,0},.56f,.14f,-1,0},
+    // Positive tail incidence gives the powered model a conventional neutral
+    // trim. The previous -1 degree setting generated excessive tail downforce
+    // in propwash, pitching past 35 degrees before a nose-down recovery.
+    {L"stabiliser",AeroSurfaceRole::HorizontalTail,{0,.04f,-.50f},{1,0,0},.56f,.14f,1.25f,0},
     {L"elevator",AeroSurfaceRole::Elevator,{0,.04f,-.60f},{1,0,0},.52f,.06f,0,25},
     {L"fin",AeroSurfaceRole::Fin,{0,.11f,-.48f},{0,1,0},.22f,.16f,0,0},
     {L"rudder",AeroSurfaceRole::Rudder,{0,.12f,-.58f},{0,1,0},.19f,.06f,0,28}

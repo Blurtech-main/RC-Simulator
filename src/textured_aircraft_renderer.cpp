@@ -10,6 +10,12 @@ struct P3{float x,y,z;};
 P3 cross(P3 a,P3 b){return{a.y*b.z-a.z*b.y,a.z*b.x-a.x*b.z,a.x*b.y-a.y*b.x};}
 P3 rotate(float w,float x,float y,float z,P3 v){P3 q{x,y,z};P3 t=cross(q,v);t={2*t.x,2*t.y,2*t.z};P3 c=cross(q,t);return{v.x+w*t.x+c.x,v.y+w*t.y+c.y,v.z+w*t.z+c.z};}
 float edge(float ax,float ay,float bx,float by,float px,float py){return(px-ax)*(by-ay)-(py-ay)*(bx-ax);}
+P3 meshToView(float w,float x,float y,float z,P3 local){
+  // The chase camera views the aircraft from behind. Apply the viewing yaw
+  // after the physical attitude rotation; doing it before pitch would invert
+  // the visible nose-up/nose-down direction.
+  P3 world=rotate(w,x,y,z,local);return {-world.x,world.y,-world.z};
+}
 template<class T>bool read(std::ifstream&f,T&v){return bool(f.read(reinterpret_cast<char*>(&v),sizeof(v)));}
 }
 
@@ -27,18 +33,52 @@ TexturedAircraftRenderer::TexturedAircraftRenderer(){
   pixels_.resize(480*340*4);depth_.resize(480*340);loaded_=true;
 }
 
+bool TexturedAircraftRenderer::pitchDirectionMatchesPhysics() const{
+  if(!loaded_)return false;
+  P3 nose{};unsigned count=0;
+  for(const auto& triangle:triangles_)if(triangle.part==1)for(const auto& v:triangle.v){nose.x+=v.x;nose.y+=v.y;nose.z+=v.z;++count;}
+  if(!count)return false;nose={nose.x/count,nose.y/count,nose.z/count};
+  const float half=10.f*3.14159265358979323846f/360.f;
+  auto up=meshToView(std::cos(half),-std::sin(half),0,0,nose);
+  auto down=meshToView(std::cos(half),std::sin(half),0,0,nose);
+  return nose.z>.4f&&up.y>nose.y+.05f&&down.y<nose.y-.05f;
+}
+
+void TexturedAircraftRenderer::drawGroundShadow(HDC target,int cx,int groundY,float ppm,float altitudeAgl,unsigned wheelsOnGround){
+  if(!loaded_||altitudeAgl>4.f)return;
+  const float proximity=std::clamp(1.f-altitudeAgl/4.f,0.f,1.f);
+  const int W=std::clamp(int(ppm*1.30f),80,360),H=std::clamp(int(ppm*.22f),22,72);
+  shadowPixels_.assign(size_t(W)*H*4,0);
+  const float rx=W*.46f,ry=H*(wheelsOnGround? .24f:.34f);
+  const float maximumAlpha=(wheelsOnGround?126.f:66.f)*proximity;
+  for(int y=0;y<H;y++)for(int x=0;x<W;x++){
+    const float nx=(x+.5f-W*.5f)/rx,ny=(y+.5f-H*.5f)/ry;
+    const float falloff=std::clamp(1.f-nx*nx-ny*ny,0.f,1.f);
+    const unsigned a=static_cast<unsigned>(maximumAlpha*falloff*falloff);
+    shadowPixels_[(size_t(y)*W+x)*4+3]=static_cast<unsigned char>(a);
+  }
+  BITMAPINFO bi{};bi.bmiHeader.biSize=sizeof(BITMAPINFOHEADER);bi.bmiHeader.biWidth=W;bi.bmiHeader.biHeight=-H;bi.bmiHeader.biPlanes=1;bi.bmiHeader.biBitCount=32;bi.bmiHeader.biCompression=BI_RGB;
+  void*bits{};HBITMAP bm=CreateDIBSection(target,&bi,DIB_RGB_COLORS,&bits,nullptr,0);if(!bm)return;
+  std::copy(shadowPixels_.begin(),shadowPixels_.end(),static_cast<unsigned char*>(bits));HDC src=CreateCompatibleDC(target);auto old=SelectObject(src,bm);BLENDFUNCTION blend{AC_SRC_OVER,0,255,AC_SRC_ALPHA};
+  AlphaBlend(target,cx-W/2,groundY-H/2,W,H,src,0,0,W,H,blend);SelectObject(src,old);DeleteDC(src);DeleteObject(bm);
+}
+
 void TexturedAircraftRenderer::draw(HDC target,int cx,int cy,float ppm,float qw,float qx,float qy,float qz,float propellerAngle,float propellerRpm){
   if(!loaded_)return;constexpr int W=480,H=340;std::fill(pixels_.begin(),pixels_.end(),static_cast<unsigned char>(0));std::fill(depth_.begin(),depth_.end(),-1e30f);
   struct S{float x,y,z,nx,ny,nz,u,v;};
   for(int pass=0;pass<2;pass++)for(const auto&t:triangles_){const auto&tex=textures_[t.material];bool transparent=(tex.flags&1)!=0;if(transparent!=(pass==1))continue;S s[3]{};for(int i=0;i<3;i++){
-    // The imported C172 mesh points down local -Z, while the flight model's
-    // forward vector is local +Z.  Turn only the visual mesh around so a
-    // fresh flight starts looking down the runway instead of back at camera.
+    // The runtime mesh's tagged propeller is at +Z (measured mean +0.613 m),
+    // matching the flight model's forward axis. Do not turn the mesh around:
+    // that swaps nose and tail and makes a nose-up rotation look nose-down.
     P3 local{t.v[i].x,t.v[i].y,t.v[i].z},localNormal{t.v[i].nx,t.v[i].ny,t.v[i].nz};
     if(t.part==1){float angle=propellerAngle;float ca=std::cos(angle),sa=std::sin(angle);float x=local.x-propellerHubX_,y=local.y-propellerHubY_;local={propellerHubX_+ca*x-sa*y,propellerHubY_+sa*x+ca*y,local.z};localNormal={ca*localNormal.x-sa*localNormal.y,sa*localNormal.x+ca*localNormal.y,localNormal.z};}
-    auto p=rotate(qw,qx,qy,qz,{-local.x,local.y,-local.z});
-    auto n=rotate(qw,qx,qy,qz,{-localNormal.x,localNormal.y,-localNormal.z});
-    float k=1.f/(1.f+std::max(-.75f,p.z)*.12f);s[i]={W*.5f+p.x*ppm*k,H*.5f-(p.y-.16f*p.z)*ppm*k,p.z,n.x,n.y,n.z,t.v[i].u,t.v[i].v};
+    auto p=meshToView(qw,qx,qy,qz,local);
+    auto n=meshToView(qw,qx,qy,qz,localNormal);
+    // Keep screen vertical tied to the aircraft's real vertical axis. The old
+    // -.16*p.z pseudo-camera elevation made the nose render below the tail at
+    // level attitude and still look nose-down during a genuine +6.8 degree
+    // takeoff rotation. Depth remains available for scale and occlusion.
+    float k=1.f/(1.f+std::max(-.75f,p.z)*.12f);s[i]={W*.5f+p.x*ppm*k,H*.5f-p.y*ppm*k,p.z,n.x,n.y,n.z,t.v[i].u,t.v[i].v};
   }
   (void)propellerRpm; // Reserved for a calibrated shutter/motion-blur pass.
     float area=edge(s[0].x,s[0].y,s[1].x,s[1].y,s[2].x,s[2].y);if(std::abs(area)<.01f)continue;
